@@ -1,0 +1,132 @@
+[
+  {
+    "text": "Ali'ye 100.000 TL borc verecegim, aylik taksitlerle 1 yil icinde odeyecek",
+    "type": "borc_sozlesmesi",
+    "entities": {
+      "taraflar": ["Ali"],
+      "tutar": "100.000 TL",
+      "tarih": "1 yil"
+    }
+  },
+  {
+    "text": "Mehmet Bey'e 50.000 TL kredi verecegim, 6 ayda geri alacagim",
+    "type": "borc_sozlesmesi",
+    "entities": {
+      "taraflar": ["Mehmet Bey"],
+      "tutar": "50.000 TL",
+      "tarih": "6 ay"
+    }
+  },
+  {
+    "text": "Ahmet Yilmaz'dan 25.000 TL alacagim var, 3 ay icinde odeyecek",
+    "type": "borc_sozlesmesi",
+    "entities": {
+      "taraflar": ["Ahmet Yilmaz"],
+      "tutar": "25.000 TL",
+      "tarih": "3 ay"
+    }
+  },
+  {
+    "text": "Dairemi Zeynep Hanim'a aylik 15.000 TL'ye 1 yilligina kiralamak istiyorum",
+    "type": "kira_sozlesmesi",
+    "entities": {
+      "taraflar": ["Zeynep Hanim"],
+      "tutar": "15.000 TL",
+      "tarih": "1 yil"
+    }
+  },
+  {
+    "text": "Evimi kiraya vermek istiyorum, aylik 12.000 TL, 2 yillik sozlesme",
+    "type": "kira_sozlesmesi",
+    "entities": {
+      "tutar": "12.000 TL",
+      "tarih": "2 yil"
+    }
+  },
+  {
+    "text": "Kadikoy'deki dukkanimi aylik 20.000 TL'ye kiraya verecegim",
+    "type": "kira_sozlesmesi",
+    "entities": {
+      "tutar": "20.000 TL",
+      "lokasyon": "Kadikoy"
+    }
+  },
+  {
+    "text": "Web sitesi tasarimi yapacagim, proje bedeli 30.000 TL",
+    "type": "hizmet_sozlesmesi",
+    "entities": {
+      "tutar": "30.000 TL"
+    }
+  },
+  {
+    "text": "ABC Sirketi'ne danismanlik hizmeti verecegim, aylik 10.000 TL",
+    "type": "hizmet_sozlesmesi",
+    "entities": {
+      "kurum": "ABC Sirketi",
+      "tutar": "10.000 TL"
+    }
+  },
+  {
+    "text": "Freelance yazilim gelistirme isi yapacagim, toplam 50.000 TL",
+    "type": "hizmet_sozlesmesi",
+    "entities": {
+      "tutar": "50.000 TL"
+    }
+  },
+  {
+    "text": "Arabami Can Bey'e 250.000 TL'ye satacagim",
+    "type": "satis_sozlesmesi",
+    "entities": {
+      "taraflar": ["Can Bey"],
+      "tutar": "250.000 TL"
+    }
+  },
+  {
+    "text": "Bilgisayarimi 15.000 TL'ye satmak istiyorum",
+    "type": "satis_sozlesmesi",
+    "entities": {
+      "tutar": "15.000 TL"
+    }
+  },
+  {
+    "text": "Personel alacagim, aylik maas 35.000 TL",
+    "type": "is_sozlesmesi",
+    "entities": {
+      "tutar": "35.000 TL"
+    }
+  },
+  {
+    "text": "Selin Hanim'i ise alacagim, tam zamanli calisacak, maas 40.000 TL",
+    "type": "is_sozlesmesi",
+    "entities": {
+      "taraflar": ["Selin Hanim"],
+      "tutar": "40.000 TL"
+    }
+  },
+  {
+    "text": "Babama banka islemleri icin vekalet vermek istiyorum",
+    "type": "vekaletname",
+    "entities": {
+      "taraflar": ["Baba"]
+    }
+  },
+  {
+    "text": "Avukatima dava takibi icin vekaletname duzenleyecegim",
+    "type": "vekaletname",
+    "entities": {
+      "taraflar": ["Avukat"]
+    }
+  },
+  {
+    "text": "Odemeyi zamaninda yapacagima dair taahhut veriyorum",
+    "type": "taahhutname",
+    "entities": {}
+  },
+  {
+    "text": "Isi 30 gun icinde tamamlayacagimi taahhut ediyorum",
+    "type": "taahhutname",
+    "entities": {
+      "tarih": "30 gun"
+    }
+  }
+]
