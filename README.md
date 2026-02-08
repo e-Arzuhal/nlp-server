@@ -38,7 +38,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 - Servis **spaCy varsa** spaCy NER kullanir, yoksa otomatik **lite/regex** entity extraction moduna duser.
 - spaCy NER kalitesi icin (onerilen): **Python 3.11/3.12** + model indir:
 ```bash
-python -m spacy download tr_core_news_sm
+python -m spacy download en_core_web_sm
 ```
 - Python 3.13’te: `requirements.txt` spaCy’yi otomatik kurmaz; servis regex/lite modda calisir.
   - Isterseniz `USE_SPACY=false` ile zorla lite modda tutabilirsiniz.
