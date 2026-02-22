@@ -1,202 +1,142 @@
 # e-Arzuhal NLP Server
 
-Dogal dil isleme servisi - sozlesme tipi siniflandirma ve entity extraction.
+A lightweight Named Entity Recognition (NER) microservice for Turkish text extraction.
 
-## Ozellikler
+## Purpose
 
-- **Contract Type Classification**: Metin tabanli sozlesme tipi siniflandirma (TF-IDF + Naive Bayes)
-- **Named Entity Recognition**: spaCy ile PERSON, MONEY, DATE, ORG, GPE extraction
-- **Turkce Destek**: Turkce para birimi ve tarih pattern'leri
-- **Oneriler**: Eksik alan tespiti ve kullanici onerileri
+This service has **ONE JOB**: Extract named entities from Turkish text. It does NOT perform classification.
 
-## Desteklenen Sozlesme Tipleri
+## Features
 
-| Tip | Aciklama |
-|-----|----------|
-| `borc_sozlesmesi` | Borc/Kredi sozlesmesi |
-| `kira_sozlesmesi` | Kira sozlesmesi |
-| `hizmet_sozlesmesi` | Hizmet/Danismanlik sozlesmesi |
-| `satis_sozlesmesi` | Satis sozlesmesi |
-| `is_sozlesmesi` | Is/Istihdam sozlesmesi |
-| `vekaletname` | Vekaletname |
-| `taahhutname` | Taahhutname |
+- **Named Entity Recognition**: SpaCy `tr_core_news_md` + custom Regex patterns
+- **Turkish Support**: Optimized for Turkish currency (TL, ₺, lira), dates, and property types
+- **Lightweight**: No heavy deep learning models - CPU-friendly
+- **Fast**: Single endpoint, minimal processing overhead
 
-## Kurulum
+## Extracted Entity Types
+
+| Type | Description | Examples |
+|------|-------------|----------|
+| `PERSON` | Person names | Ahmet Yılmaz, Fatma Demir |
+| `MONEY` | Monetary amounts | 15.000 TL, 20.000 ₺, 5000 lira |
+| `LOCATION` | Locations/places | Antalya, İstanbul, Ankara |
+| `DATE` | Date expressions | 1 yıllığına, 6 ay, 15 Ocak 2024 |
+| `OBJECT_OR_PROPERTY` | Objects/property types | ev, daire, araç, depozito |
+
+## Installation
 
 ```bash
-python -m pip install --upgrade pip setuptools wheel
-
+# Create virtual environment
 python -m venv venv
-venv\Scripts\activate
+source venv/bin/activate  # Linux/Mac
+# venv\Scripts\activate   # Windows
 
+# Install dependencies
 pip install -r requirements.txt
 
-uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+# Download SpaCy Turkish model
+python -m spacy download tr_core_news_md
+
+# Run the server
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-## spaCy (Opsiyonel)
-- Servis **spaCy varsa** spaCy NER kullanir, yoksa otomatik **lite/regex** entity extraction moduna duser.
-- spaCy NER kalitesi icin (onerilen): **Python 3.11/3.12** + model indir:
+## Docker
+
 ```bash
-python -m spacy download en_core_web_sm
-```
-- Python 3.13’te: `requirements.txt` spaCy’yi otomatik kurmaz; servis regex/lite modda calisir.
-  - Isterseniz `USE_SPACY=false` ile zorla lite modda tutabilirsiniz.
-  - `REQUIRE_SPACY=true` yaparsaniz spaCy/model yoksa servis acilmaz.
+# Build
+docker build -t nlp-server .
 
-## Notlar (Performans)
-- Default olarak `tr_core_news_sm` kullanin (CPU, hizli).
-- Server, entity extraction icin spaCy pipeline'inda NER disi bilesenleri disable eder (daha hizli inference).
-- Runtime'da otomatik model indirme kapali (deterministik + hizli startup). Gerekirse:
-  - `ALLOW_SPACY_DOWNLOAD=true`
+# Run
+docker run -p 8000:8000 nlp-server
+```
 
 ## API Endpoints
 
-### POST /api/nlp/analyze
-Ana analiz endpoint'i - sozlesme tipi + entity'ler + oneriler
+### POST /api/extract
+
+Main extraction endpoint - extracts named entities from Turkish text.
 
 **Request:**
 ```json
 {
-  "text": "Ahmet Yilmaz'a 50.000 TL borc verecegim, 6 ay icinde geri odeyecek."
+  "text": "Ahmet Yılmaz'a Antalya'daki evimi aylık 15.000 TL'ye 1 yıllığına kiralayacağım. 20.000 TL depozito alacağım."
 }
 ```
 
 **Response:**
 ```json
 {
-  "success": true,
-  "contract_type": "borc_sozlesmesi",
-  "confidence": 0.89,
-  "entities": [
-    {"text": "Ahmet Yilmaz", "label": "PERSON", "mapped_field": "taraf"},
-    {"text": "50.000 TL", "label": "MONEY", "mapped_field": "tutar"}
-  ],
-  "extracted_fields": {
-    "taraflar": ["Ahmet Yilmaz"],
-    "tutar": "50.000 TL",
-    "tarih": "6 ay"
-  },
-  "suggestions": [
-    "Faiz orani belirtmek ister misiniz? (Kullanicilarin %78'i ekliyor)"
-  ]
+  "raw_text": "Ahmet Yılmaz'a Antalya'daki evimi aylık 15.000 TL'ye 1 yıllığına kiralayacağım. 20.000 TL depozito alacağım.",
+  "entities": {
+    "PERSON": ["Ahmet Yılmaz"],
+    "MONEY": ["15.000 TL", "20.000 TL"],
+    "LOCATION": ["Antalya"],
+    "DATE": ["1 yıllığına"],
+    "OBJECT_OR_PROPERTY": ["ev", "depozito"]
+  }
 }
 ```
 
-### POST /api/nlp/classify
-Sadece sozlesme tipi siniflandirma
-
-### POST /api/nlp/entities
-Sadece entity extraction
-
 ### GET /health
-Saglik kontrolu
 
-## Proje Yapisi
+Health check endpoint.
+
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "spacy_model_loaded": true
+}
+```
+
+### GET /docs
+
+Interactive API documentation (Swagger UI).
+
+## Project Structure
 
 ```
 nlp-server/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py              # FastAPI app
-│   ├── config.py            # Konfigürasyon
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── schemas.py       # Pydantic modelleri
-│   ├── routers/
-│   │   ├── __init__.py
-│   │   └── nlp.py           # API routes
+│   ├── main.py              # FastAPI application
+│   ├── models.py            # Pydantic schemas
 │   └── services/
 │       ├── __init__.py
-│       ├── analyzer.py      # Ana analiz servisi
-│       ├── contract_classifier.py  # Siniflandirici
-│       └── entity_extractor.py     # NER
-├── data/
-│   ├── train/               # Egitim verisi
-│   ├── test/                # Test verisi
-│   └── models/              # Kaydedilmis modeller
+│       └── extractor.py     # TurkishEntityExtractor
 ├── tests/
+│   └── test_nlp.py
+├── Dockerfile
 ├── requirements.txt
-├── .env.example
 └── README.md
 ```
 
-## Gelistirme
+## Architecture
 
-### Model Egitimi
+This service is part of a **Star Topology** where a central "Main Server" orchestrates:
 
-Classifier ilk calistirmada default Turkce egitim verisi ile egitilir.
-Daha fazla veri eklemek icin `data/train/` klasorune JSON dosyalari eklenebilir.
-
-### Test
-
-```bash
-pytest tests/
+```
+                    ┌─────────────┐
+                    │ Main Server │
+                    │ (Orchestrator)│
+                    └──────┬──────┘
+                           │
+         ┌─────────────────┼─────────────────┐
+         │                 │                 │
+         ▼                 ▼                 ▼
+   ┌───────────┐    ┌───────────┐    ┌───────────┐
+   │ NLP Server│    │ Neo4j     │    │ LLM       │
+   │ (This)    │    │ Server    │    │ Server    │
+   └───────────┘    └───────────┘    └───────────┘
+         │
+         ▼
+   Extract entities
+   from Turkish text
 ```
 
-## Ekip
-- **Deniz Eren Arıcı** 
-- **Burak DERE** - AI & Data Engineer
+## Notes
 
-## Terminalden deneme (curl)
-
-### Bash / zsh / Git Bash (Windows)
-```bash
-curl -X POST "http://localhost:8001/api/nlp/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Ahmet Yilmaz'\''a 50.000 TL borc verecegim, 6 ay icinde odeyecek"}'
-```
-
-### Windows PowerShell
-> Not: PowerShell'de `curl` bazen `Invoke-WebRequest` alias'idir. Gercek curl icin `curl.exe` kullanin.
-
-```powershell
-curl.exe -X POST "http://localhost:8001/api/nlp/analyze" `
-  -H "Content-Type: application/json" `
-  -d "{`"text`":`"Ahmet Yilmaz'a 50.000 TL borc verecegim, 6 ay icinde odeyecek`"}"
-```
-
-Alternatif (PowerShell native):
-```powershell
-Invoke-RestMethod -Method Post -Uri "http://localhost:8001/api/nlp/analyze" `
-  -ContentType "application/json" `
-  -Body (@{ text = "Ahmet Yilmaz'a 50.000 TL borc verecegim, 6 ay icinde odeyecek" } | ConvertTo-Json)
-```
-
-### PowerShell (Invoke-RestMethod) - daha fazla ornek
-
-> Ipucu: Tek seferlik baz URL tanimlayin:
-```powershell
-$baseUrl = "http://localhost:8001"
-```
-
-#### Health check
-```powershell
-Invoke-RestMethod -Method Get -Uri "$baseUrl/health" | Format-List
-```
-
-#### Classify (skor tablosu ile)
-```powershell
-$r = Invoke-RestMethod -Method Post -Uri "$baseUrl/api/nlp/classify" `
-  -ContentType "application/json" `
-  -Body (@{ text = "Dairemi kiraya verecegim aylik 15000 TL" } | ConvertTo-Json)
-
-$r | Select-Object contract_type, confidence | Format-List
-$r.all_scores.GetEnumerator() | Sort-Object Value -Descending | Format-Table -AutoSize
-```
-
-#### Entities (sadece alanlar)
-```powershell
-Invoke-RestMethod -Method Post -Uri "$baseUrl/api/nlp/entities" `
-  -ContentType "application/json" `
-  -Body (@{ text = "Kadikoy'deki dukkanimi aylik 20.000 TL'ye kiraya verecegim" } | ConvertTo-Json) `
-| Select-Object -ExpandProperty extracted_fields | ConvertTo-Json -Depth 5
-```
-
-#### Analyze (tum ciktiyi JSON gor)
-```powershell
-Invoke-RestMethod -Method Post -Uri "$baseUrl/api/nlp/analyze" `
-  -ContentType "application/json" `
-  -Body (@{ text = "Ali Veli'ye 100.000 TL borc verecegim, 6 ay icinde odeyecek" } | ConvertTo-Json) `
-| ConvertTo-Json -Depth 6
-```
+- If SpaCy model is not available, the service falls back to regex-only mode
+- All entity type keys are always present in the response (empty list if none found)
+- The service is stateless and can be scaled horizontally
