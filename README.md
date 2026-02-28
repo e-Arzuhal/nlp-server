@@ -121,6 +121,58 @@ nlp-server/
 └── README.md
 ```
 
+## Ortam Degiskenleri
+
+`.env.example` dosyasini kopyalayarak `.env` olusturun:
+
+```bash
+cp .env.example .env
+```
+
+| Degisken | Varsayilan | Aciklama |
+|----------|-----------|----------|
+| `HOST` | `0.0.0.0` | Dinleme adresi |
+| `PORT` | `8001` | Servis portu |
+| `DEBUG` | `true` | Swagger UI + detayli log |
+| `ALLOWED_ORIGINS` | `http://localhost:8080` | CORS whitelist (virgülle ayrilmis) |
+| `INTERNAL_API_KEY` | _(bos)_ | Zorunlu API anahtari (prod'da set edin) |
+| `USE_SPACY` | `true` | `false` ile zorla lite/regex moda gecer |
+| `REQUIRE_SPACY` | `false` | `true` ile spaCy yoksa servis baslamaz |
+| `ALLOW_SPACY_DOWNLOAD` | `false` | `true` ile runtime'da model indirir |
+
+## Guvenlik
+
+### CORS
+
+`ALLOWED_ORIGINS` ortam degiskeni ile izin verilen origin'ler tanimlanir.
+Production'da yalnizca `main-server` adresini ekleyin:
+
+```
+ALLOWED_ORIGINS=http://main-server:8080
+```
+
+`allow_credentials=False` — cookie/session aktarilmaz (JWT yalnizca Authorization header'da).
+
+### Internal API Key Middleware
+
+Her istekte `X-Internal-API-Key` header'i kontrol edilir.
+
+- `INTERNAL_API_KEY` **set edilmemisse** (dev): kontrol atlanir, servis acik calisir.
+- **Set edilmisse** (prod): eslesmeyen istek `401 Unauthorized` alir.
+- `/health` ve `/` endpoint'leri her zaman serbest.
+
+`INTERNAL_API_KEY` degerini `main-server`'in `INTERNAL_API_KEY` degeriyle ayni yapın:
+
+```bash
+# Uretmek icin:
+openssl rand -hex 32
+```
+
+### Swagger UI
+
+- `DEBUG=true` (dev): `/docs` ve `/redoc` erisilebilir.
+- `DEBUG=false` (prod): Swagger UI tamamen devre disi.
+
 ## Gelistirme
 
 ### Model Egitimi
