@@ -11,6 +11,12 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8001))
 DEBUG = os.getenv("DEBUG", "true").lower() == "true"
 
+# Security
+# Comma-separated list of allowed origins. Default: main-server only.
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:8080").split(",")]
+# Internal API key for server-to-server calls. Empty = disabled (dev mode).
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
+
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
