@@ -84,6 +84,7 @@ class EntityExtractor:
             "taraflar": [],
             "tutar": None,
             "tarih": None,
+            "sure": None,
             "lokasyon": None,
             "kurum": None,
         }
@@ -123,6 +124,8 @@ class EntityExtractor:
             extracted_fields["tutar"] = self._extract_turkish_money(text)
         if not extracted_fields["tarih"]:
             extracted_fields["tarih"] = self._extract_turkish_date(text)
+        if not extracted_fields["sure"]:
+            extracted_fields["sure"] = self._extract_turkish_duration(text)
         if not extracted_fields["taraflar"]:
             extracted_fields["taraflar"] = self._extract_simple_persons(text)
         if not extracted_fields["lokasyon"]:
@@ -138,6 +141,7 @@ class EntityExtractor:
             "taraflar": [],
             "tutar": None,
             "tarih": None,
+            "sure": None,
             "lokasyon": None,
             "kurum": None,
         }
@@ -157,24 +161,29 @@ class EntityExtractor:
                 }
             )
 
-        # MONEY
+        # MONEY — TL/lira suffix'li ve bağlamsal (kira bedeli, ücret, tutar vb.)
         money_patterns = [
-            r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(TL|tl|Tl|lira|Lira)",
-            r"(\d+(?:\.\d+)?)\s*(bin|milyon|milyar)?\s*(TL|tl|lira)",
+            r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(?:TL|tl|Tl|lira|Lira)",
+            r"(\d+(?:[.,]\d+)?)\s*(?:bin|milyon|milyar)?\s*(?:TL|tl|lira)",
+            r"(\d[\d.,]*)\s+(?:kira bedeli|kira ücreti|bedeli|ücret|tutar|fiyat)",
+            r"(?:bedeli|ücreti|tutarı|fiyatı)\s+(\d[\d.,]*)",
         ]
         for pat in money_patterns:
-            for m in re.finditer(pat, text):
+            for m in re.finditer(pat, text, flags=re.IGNORECASE):
                 add_entity("MONEY", m)
                 if extracted_fields["tutar"] is None:
                     extracted_fields["tutar"] = self._normalize_money(m.group(0))
 
-        # DATE / sure
+        # DATE — sadece takvim tarihleri
         for m in re.finditer(r"(\d{1,2}[./]\d{1,2}[./]\d{2,4})", text):
             add_entity("DATE", m)
             extracted_fields["tarih"] = extracted_fields["tarih"] or m.group(0)
-        for m in re.finditer(r"(\d+)\s*(ay|gun|hafta|yil)", text, flags=re.IGNORECASE):
-            add_entity("DATE", m)
-            extracted_fields["tarih"] = extracted_fields["tarih"] or m.group(0)
+
+        # DURATION (sure) — "12 ay", "6 hafta", "2 yıl" gibi süreler tarih DEĞİLDİR
+        for m in re.finditer(r"(\d+)\s*(ay|gün|gun|hafta|yıl|yil)", text, flags=re.IGNORECASE):
+            add_entity("DURATION", m)
+            if extracted_fields["sure"] is None:
+                extracted_fields["sure"] = m.group(0)
 
         # PERSON (lite)
         person_pat = r"\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zçğıöşü]+)?(?:\s+(?:Bey|Hanim))?)\b"
@@ -201,6 +210,7 @@ class EntityExtractor:
         # Son bir tamamlayici (eski helper'lar)
         extracted_fields["tutar"] = extracted_fields["tutar"] or self._extract_turkish_money(text)
         extracted_fields["tarih"] = extracted_fields["tarih"] or self._extract_turkish_date(text)
+        extracted_fields["sure"] = extracted_fields.get("sure") or self._extract_turkish_duration(text)
         if not extracted_fields["taraflar"]:
             extracted_fields["taraflar"] = self._extract_simple_persons(text)
 
@@ -231,17 +241,21 @@ class EntityExtractor:
         return None
 
     def _extract_turkish_date(self, text: str) -> Optional[str]:
-        """Turkce metin icinden tarih cikar"""
+        """Turkce metin icinden takvim tarihi cikar (sure degil)"""
         patterns = [
             r"(\d{1,2}[./]\d{1,2}[./]\d{2,4})",
             r"(\d{1,2})\s*(Ocak|Subat|Mart|Nisan|Mayis|Haziran|Temmuz|Agustos|Eylul|Ekim|Kasim|Aralik)\s*(\d{2,4})",
-            r"(\d+)\s*(ay|gun|hafta|yil)",
         ]
         for pattern in patterns:
             m = re.search(pattern, text, re.IGNORECASE)
             if m:
                 return m.group(0)
         return None
+
+    def _extract_turkish_duration(self, text: str) -> Optional[str]:
+        """Turkce metin icinden sozlesme suresini cikar (ay, gun, hafta, yil)"""
+        m = re.search(r"(\d+)\s*(ay|gün|gun|hafta|yıl|yil)", text, re.IGNORECASE)
+        return m.group(0) if m else None
 
     def _extract_simple_persons(self, text: str) -> list[str]:
         pat = r"\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zçğıöşü]+)?(?:\s+(?:Bey|Hanim))?)\b"
