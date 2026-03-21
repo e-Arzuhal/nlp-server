@@ -1,254 +1,189 @@
 # e-Arzuhal NLP Server
 
-Dogal dil isleme servisi - sozlesme tipi siniflandirma ve entity extraction.
+Doğal dil işleme servisi — sözleşme tipi sınıflandırma ve varlık (entity) çıkarımı.
 
-## Ozellikler
+---
 
-- **Contract Type Classification**: Metin tabanli sozlesme tipi siniflandirma (TF-IDF + Naive Bayes)
-- **Named Entity Recognition**: spaCy ile PERSON, MONEY, DATE, ORG, GPE extraction
-- **Turkce Destek**: Turkce para birimi ve tarih pattern'leri
-- **Oneriler**: Eksik alan tespiti ve kullanici onerileri
+## Özellikler
 
-## Desteklenen Sozlesme Tipleri
+- **Sözleşme Türü Sınıflandırma** — TF-IDF + Naive Bayes ile 7 Türkçe sözleşme türü
+- **Named Entity Recognition** — spaCy (opsiyonel) veya regex/lite mode
+- **Para Miktarı Çıkarımı** — TL/lira suffix'siz bağlamsal eşleşme (kira bedeli, ücret, tutar vb.)
+- **Süre / Tarih Ayrımı** — `sure` (12 ay, 6 hafta) ile `tarih` (01.01.2026) ayrı alanlarda
+- **DURATION Entity** — Ay/gün/hafta/yıl ifadeleri ayrı entity tipi olarak işaretlenir
 
-| Tip | Aciklama |
+---
+
+## Desteklenen Sözleşme Tipleri
+
+| Tip | Açıklama |
 |-----|----------|
-| `borc_sozlesmesi` | Borc/Kredi sozlesmesi |
-| `kira_sozlesmesi` | Kira sozlesmesi |
-| `hizmet_sozlesmesi` | Hizmet/Danismanlik sozlesmesi |
-| `satis_sozlesmesi` | Satis sozlesmesi |
-| `is_sozlesmesi` | Is/Istihdam sozlesmesi |
+| `borc_sozlesmesi` | Borç / Kredi sözleşmesi |
+| `kira_sozlesmesi` | Kira sözleşmesi |
+| `hizmet_sozlesmesi` | Hizmet / Danışmanlık sözleşmesi |
+| `satis_sozlesmesi` | Satış sözleşmesi |
+| `is_sozlesmesi` | İş / İstihdam sözleşmesi |
 | `vekaletname` | Vekaletname |
-| `taahhutname` | Taahhutname |
+| `taahhutname` | Taahhütname |
+
+---
 
 ## Kurulum
 
 ```bash
-python -m pip install --upgrade pip setuptools wheel
-
+cd nlp-server
 python -m venv venv
-venv\Scripts\activate
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Linux/macOS
 
 pip install -r requirements.txt
-
 uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-## spaCy (Opsiyonel)
-- Servis **spaCy varsa** spaCy NER kullanir, yoksa otomatik **lite/regex** entity extraction moduna duser.
-- spaCy NER kalitesi icin (onerilen): **Python 3.11/3.12** + model indir:
-```bash
-python -m spacy download en_core_web_sm
-```
-- Python 3.13’te: `requirements.txt` spaCy’yi otomatik kurmaz; servis regex/lite modda calisir.
-  - Isterseniz `USE_SPACY=false` ile zorla lite modda tutabilirsiniz.
-  - `REQUIRE_SPACY=true` yaparsaniz spaCy/model yoksa servis acilmaz.
+---
 
-## Notlar (Performans)
-- Default olarak `tr_core_news_sm` kullanin (CPU, hizli).
-- Server, entity extraction icin spaCy pipeline'inda NER disi bilesenleri disable eder (daha hizli inference).
-- Runtime'da otomatik model indirme kapali (deterministik + hizli startup). Gerekirse:
-  - `ALLOW_SPACY_DOWNLOAD=true`
+## spaCy (Opsiyonel)
+
+Servis spaCy varsa spaCy NER, yoksa otomatik **regex/lite** moduna geçer.
+
+```bash
+# Önerilen (Python 3.11/3.12):
+python -m spacy download tr_core_news_sm
+```
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `USE_SPACY` | `true` | `false` → zorla regex/lite mod |
+| `REQUIRE_SPACY` | `false` | `true` → spaCy yoksa servis başlamaz |
+| `ALLOW_SPACY_DOWNLOAD` | `false` | `true` → runtime'da model indirir |
+
+---
 
 ## API Endpoints
 
 ### POST /api/nlp/analyze
-Ana analiz endpoint'i - sozlesme tipi + entity'ler + oneriler
 
-**Request:**
+Ana analiz endpoint'i.
+
+**İstek:**
 ```json
 {
-  "text": "Ahmet Yilmaz'a 50.000 TL borc verecegim, 6 ay icinde geri odeyecek."
+  "text": "Kadıköy dairemi Ahmet Yılmaz'a 15000 kira bedeli ile 12 ay kiraya vereceğim."
 }
 ```
 
-**Response:**
+**Yanıt:**
 ```json
 {
   "success": true,
-  "contract_type": "borc_sozlesmesi",
-  "confidence": 0.89,
+  "contract_type": "kira_sozlesmesi",
+  "confidence": 0.92,
   "entities": [
-    {"text": "Ahmet Yilmaz", "label": "PERSON", "mapped_field": "taraf"},
-    {"text": "50.000 TL", "label": "MONEY", "mapped_field": "tutar"}
+    {"text": "Ahmet Yılmaz", "label": "PERSON", "mapped_field": "taraf"},
+    {"text": "15000 kira bedeli", "label": "MONEY", "mapped_field": "tutar"},
+    {"text": "12 ay", "label": "DURATION", "mapped_field": "sure"}
   ],
   "extracted_fields": {
-    "taraflar": ["Ahmet Yilmaz"],
-    "tutar": "50.000 TL",
-    "tarih": "6 ay"
+    "taraflar": ["Ahmet Yılmaz"],
+    "tutar": "15000 TL",
+    "tarih": null,
+    "sure": "12 ay",
+    "lokasyon": "Kadıköy",
+    "kurum": null
   },
   "suggestions": [
-    "Faiz orani belirtmek ister misiniz? (Kullanicilarin %78'i ekliyor)"
+    "Depozito miktarı belirtmek ister misiniz? (Kullanıcıların %84'ü ekliyor)"
   ]
 }
 ```
 
+> **Not:** `tarih` yalnızca takvim tarihlerini içerir (ör. `01/06/2026`).
+> Süre ifadeleri (`12 ay`, `6 hafta`) `sure` alanına yazılır.
+
 ### POST /api/nlp/classify
-Sadece sozlesme tipi siniflandirma
+
+Sadece sözleşme türü sınıflandırma.
 
 ### POST /api/nlp/entities
-Sadece entity extraction
+
+Sadece entity extraction.
 
 ### GET /health
-Saglik kontrolu
 
-## Proje Yapisi
+Sağlık kontrolü.
+
+---
+
+## Entity Tipleri
+
+| Label | Açıklama | extracted_fields |
+|-------|----------|------------------|
+| `PERSON` | Kişi adı | `taraflar` |
+| `MONEY` | Para (TL suffix veya bağlamsal) | `tutar` |
+| `DATE` | Takvim tarihi (gg/aa/yyyy, ay isimleri) | `tarih` |
+| `DURATION` | Süre (ay, gün, hafta, yıl) | `sure` |
+| `ORG` | Kurum adı | `kurum` |
+| `GPE` | Yer adı | `lokasyon` |
+
+---
+
+## Proje Yapısı
 
 ```
 nlp-server/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py              # FastAPI app
-│   ├── config.py            # Konfigürasyon
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── schemas.py       # Pydantic modelleri
-│   ├── routers/
-│   │   ├── __init__.py
-│   │   └── nlp.py           # API routes
+│   ├── main.py
+│   ├── config.py
+│   ├── models/schemas.py
+│   ├── routers/nlp.py
 │   └── services/
-│       ├── __init__.py
-│       ├── analyzer.py      # Ana analiz servisi
-│       ├── contract_classifier.py  # Siniflandirici
-│       └── entity_extractor.py     # NER
+│       ├── analyzer.py
+│       ├── contract_classifier.py
+│       └── entity_extractor.py    # Para + süre/tarih ayrımı; DURATION entity
 ├── data/
-│   ├── train/               # Egitim verisi
-│   ├── test/                # Test verisi
-│   └── models/              # Kaydedilmis modeller
+│   ├── train/
+│   └── models/
 ├── tests/
 ├── requirements.txt
-├── .env.example
-└── README.md
+└── .env.example
 ```
 
-## Ortam Degiskenleri
+---
 
-`.env.example` dosyasini kopyalayarak `.env` olusturun:
+## Ortam Değişkenleri
 
-```bash
-cp .env.example .env
-```
-
-| Degisken | Varsayilan | Aciklama |
+| Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
 | `HOST` | `0.0.0.0` | Dinleme adresi |
-| `PORT` | `8001` | Servis portu |
-| `DEBUG` | `true` | Swagger UI + detayli log |
-| `ALLOWED_ORIGINS` | `http://localhost:8080` | CORS whitelist (virgülle ayrilmis) |
-| `INTERNAL_API_KEY` | _(bos)_ | Zorunlu API anahtari (prod'da set edin) |
-| `USE_SPACY` | `true` | `false` ile zorla lite/regex moda gecer |
-| `REQUIRE_SPACY` | `false` | `true` ile spaCy yoksa servis baslamaz |
-| `ALLOW_SPACY_DOWNLOAD` | `false` | `true` ile runtime'da model indirir |
+| `PORT` | `8001` | Port |
+| `DEBUG` | `true` | Swagger UI + detaylı log |
+| `ALLOWED_ORIGINS` | `http://localhost:8080` | CORS whitelist |
+| `INTERNAL_API_KEY` | _(boş)_ | Prod'da set edilmeli |
 
-## Guvenlik
+---
 
-### CORS
+## Test Örnekleri
 
-`ALLOWED_ORIGINS` ortam degiskeni ile izin verilen origin'ler tanimlanir.
-Production'da yalnizca `main-server` adresini ekleyin:
+### curl
 
-```
-ALLOWED_ORIGINS=http://main-server:8080
-```
-
-`allow_credentials=False` — cookie/session aktarilmaz (JWT yalnizca Authorization header'da).
-
-### Internal API Key Middleware
-
-Her istekte `X-Internal-API-Key` header'i kontrol edilir.
-
-- `INTERNAL_API_KEY` **set edilmemisse** (dev): kontrol atlanir, servis acik calisir.
-- **Set edilmisse** (prod): eslesmeyen istek `401 Unauthorized` alir.
-- `/health` ve `/` endpoint'leri her zaman serbest.
-
-`INTERNAL_API_KEY` degerini `main-server`'in `INTERNAL_API_KEY` degeriyle ayni yapın:
-
-```bash
-# Uretmek icin:
-openssl rand -hex 32
-```
-
-### Swagger UI
-
-- `DEBUG=true` (dev): `/docs` ve `/redoc` erisilebilir.
-- `DEBUG=false` (prod): Swagger UI tamamen devre disi.
-
-## Gelistirme
-
-### Model Egitimi
-
-Classifier ilk calistirmada default Turkce egitim verisi ile egitilir.
-Daha fazla veri eklemek icin `data/train/` klasorune JSON dosyalari eklenebilir.
-
-### Test
-
-```bash
-pytest tests/
-```
-
-## Ekip
-- **Deniz Eren Arıcı** 
-- **Burak DERE** - AI & Data Engineer
-
-## Terminalden deneme (curl)
-
-### Bash / zsh / Git Bash (Windows)
 ```bash
 curl -X POST "http://localhost:8001/api/nlp/analyze" \
   -H "Content-Type: application/json" \
-  -d '{"text":"Ahmet Yilmaz'\''a 50.000 TL borc verecegim, 6 ay icinde odeyecek"}'
+  -d '{"text":"Kadikoy dairemi 15000 kira bedeli ile 12 ay kiraya verecegim"}'
 ```
 
-### Windows PowerShell
-> Not: PowerShell'de `curl` bazen `Invoke-WebRequest` alias'idir. Gercek curl icin `curl.exe` kullanin.
+### PowerShell
 
-```powershell
-curl.exe -X POST "http://localhost:8001/api/nlp/analyze" `
-  -H "Content-Type: application/json" `
-  -d "{`"text`":`"Ahmet Yilmaz'a 50.000 TL borc verecegim, 6 ay icinde odeyecek`"}"
-```
-
-Alternatif (PowerShell native):
 ```powershell
 Invoke-RestMethod -Method Post -Uri "http://localhost:8001/api/nlp/analyze" `
-  -ContentType "application/json" `
-  -Body (@{ text = "Ahmet Yilmaz'a 50.000 TL borc verecegim, 6 ay icinde odeyecek" } | ConvertTo-Json)
-```
-
-### PowerShell (Invoke-RestMethod) - daha fazla ornek
-
-> Ipucu: Tek seferlik baz URL tanimlayin:
-```powershell
-$baseUrl = "http://localhost:8001"
-```
-
-#### Health check
-```powershell
-Invoke-RestMethod -Method Get -Uri "$baseUrl/health" | Format-List
-```
-
-#### Classify (skor tablosu ile)
-```powershell
-$r = Invoke-RestMethod -Method Post -Uri "$baseUrl/api/nlp/classify" `
-  -ContentType "application/json" `
-  -Body (@{ text = "Dairemi kiraya verecegim aylik 15000 TL" } | ConvertTo-Json)
-
-$r | Select-Object contract_type, confidence | Format-List
-$r.all_scores.GetEnumerator() | Sort-Object Value -Descending | Format-Table -AutoSize
-```
-
-#### Entities (sadece alanlar)
-```powershell
-Invoke-RestMethod -Method Post -Uri "$baseUrl/api/nlp/entities" `
-  -ContentType "application/json" `
-  -Body (@{ text = "Kadikoy'deki dukkanimi aylik 20.000 TL'ye kiraya verecegim" } | ConvertTo-Json) `
-| Select-Object -ExpandProperty extracted_fields | ConvertTo-Json -Depth 5
-```
-
-#### Analyze (tum ciktiyi JSON gor)
-```powershell
-Invoke-RestMethod -Method Post -Uri "$baseUrl/api/nlp/analyze" `
   -ContentType "application/json" `
   -Body (@{ text = "Ali Veli'ye 100.000 TL borc verecegim, 6 ay icinde odeyecek" } | ConvertTo-Json) `
 | ConvertTo-Json -Depth 6
 ```
+
+---
+
+## Ekip
+
+- **Deniz Eren ARICI**
+- **Burak DERE** — AI & Data Engineer
