@@ -1,199 +1,195 @@
-"""
-e-Arzuhal NLP Server Tests
-Tests for the Turkish Named Entity Recognition service.
-"""
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
-from app.services.extractor import TurkishEntityExtractor, get_extractor
-
+from app.services.contract_classifier import classify_contract
+from app.services.postprocessor import extract_all
+from app.services.spacy_mapper import to_spacy_format
 
 client = TestClient(app)
 
+ENTITY_KEYS = {"PERSON", "ORG", "LOC", "MONEY", "DATE", "CARDINAL", "PERCENT"}
 
-class TestHealthCheck:
-    """Health endpoint tests"""
-    
-    def test_health_check(self):
-        """Test health endpoint returns healthy status"""
+
+# --- Health ---
+
+class TestHealth:
+    def test_health_ok(self):
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "healthy"
-        assert "version" in data
-        assert "spacy_model_loaded" in data
+        assert data["status"] == "ok"
+        assert data["model_loaded"] is True
+        assert "model" in data
 
 
-class TestRootEndpoint:
-    """Root endpoint tests"""
-    
-    def test_root_returns_service_info(self):
-        """Test root endpoint returns service information"""
+# --- Root ---
+
+class TestRoot:
+    def test_root(self):
         response = client.get("/")
         assert response.status_code == 200
-        data = response.json()
-        assert "service" in data
-        assert "version" in data
-        assert "endpoints" in data
+        assert "status" in response.json()
 
+
+# --- POST /api/v1/extract ---
 
 class TestExtractEndpoint:
-    """POST /api/extract endpoint tests"""
-    
-    def test_extract_returns_correct_structure(self):
-        """Test that response has correct structure"""
-        response = client.post("/api/extract", json={
-            "text": "Test metni"
-        })
+    def test_response_structure(self):
+        response = client.post("/api/v1/extract", json={"text": "Test metni burada."})
         assert response.status_code == 200
         data = response.json()
-        assert "raw_text" in data
-        assert "entities" in data
-        assert "PERSON" in data["entities"]
-        assert "MONEY" in data["entities"]
-        assert "LOCATION" in data["entities"]
-        assert "DATE" in data["entities"]
-        assert "OBJECT_OR_PROPERTY" in data["entities"]
-    
-    def test_extract_money_tl(self):
-        """Test extraction of Turkish Lira amounts"""
-        response = client.post("/api/extract", json={
-            "text": "Kiracıdan aylık 15.000 TL alacağım, depozito olarak 20.000 TL"
-        })
+        assert "contract_type" in data
+        assert "contract_type_confidence" in data
+        assert "extracted_entities" in data
+        assert "raw_text_length" in data
+        assert "processing_time_ms" in data
+
+    def test_all_entity_keys_always_present(self):
+        response = client.post("/api/v1/extract", json={"text": "Bu bir test metnidir."})
         assert response.status_code == 200
-        data = response.json()
-        money = data["entities"]["MONEY"]
-        assert len(money) >= 2
-        assert any("15.000 TL" in m for m in money)
-        assert any("20.000 TL" in m for m in money)
-    
-    def test_extract_money_lira(self):
-        """Test extraction of 'lira' format"""
-        response = client.post("/api/extract", json={
-            "text": "5000 lira ödeme yapılacak"
-        })
+        entities = response.json()["extracted_entities"]
+        assert set(entities.keys()) == ENTITY_KEYS
+        for key in ENTITY_KEYS:
+            assert isinstance(entities[key], list)
+
+    def test_raw_text_length(self):
+        text = "Kısa bir metin."
+        response = client.post("/api/v1/extract", json={"text": text})
         assert response.status_code == 200
-        data = response.json()
-        money = data["entities"]["MONEY"]
-        assert len(money) >= 1
-    
-    def test_extract_date_duration(self):
-        """Test extraction of duration expressions"""
-        response = client.post("/api/extract", json={
-            "text": "Sözleşme 1 yıllığına geçerli olacak, 6 ay sonra yenilenecek"
-        })
+        assert response.json()["raw_text_length"] == len(text)
+
+    def test_processing_time_present(self):
+        response = client.post("/api/v1/extract", json={"text": "Herhangi bir metin."})
         assert response.status_code == 200
-        data = response.json()
-        dates = data["entities"]["DATE"]
-        assert len(dates) >= 1
-    
-    def test_extract_objects(self):
-        """Test extraction of property/object types"""
-        response = client.post("/api/extract", json={
-            "text": "Antalya'daki evimi kiraya vereceğim, depozito alacağım"
-        })
-        assert response.status_code == 200
-        data = response.json()
-        objects = data["entities"]["OBJECT_OR_PROPERTY"]
-        assert len(objects) >= 1
-    
-    def test_extract_returns_raw_text(self):
-        """Test that raw_text is returned unchanged"""
-        original_text = "Ahmet Yılmaz'a ev kiralayacağım"
-        response = client.post("/api/extract", json={
-            "text": original_text
-        })
-        assert response.status_code == 200
-        data = response.json()
-        assert data["raw_text"] == original_text
-    
-    def test_extract_empty_text_fails(self):
-        """Test that empty text returns validation error"""
-        response = client.post("/api/extract", json={
-            "text": ""
-        })
-        assert response.status_code == 422  # Validation error
-    
-    def test_extract_all_entity_types_present(self):
-        """Test that all entity type keys are present even when empty"""
-        response = client.post("/api/extract", json={
-            "text": "Bu bir test metnidir"
-        })
-        assert response.status_code == 200
-        data = response.json()
-        entities = data["entities"]
-        # All keys must be present
-        assert isinstance(entities["PERSON"], list)
-        assert isinstance(entities["MONEY"], list)
-        assert isinstance(entities["LOCATION"], list)
-        assert isinstance(entities["DATE"], list)
-        assert isinstance(entities["OBJECT_OR_PROPERTY"], list)
+        assert response.json()["processing_time_ms"] >= 0
+
+    def test_empty_text_fails(self):
+        response = client.post("/api/v1/extract", json={"text": ""})
+        assert response.status_code == 422
+
+    def test_missing_text_field_fails(self):
+        response = client.post("/api/v1/extract", json={})
+        assert response.status_code == 422
 
 
-class TestExtractorUnit:
-    """Unit tests for TurkishEntityExtractor"""
-    
-    def test_extractor_singleton(self):
-        """Test that get_extractor returns singleton"""
-        extractor1 = get_extractor()
-        extractor2 = get_extractor()
-        assert extractor1 is extractor2
-    
-    def test_extractor_money_patterns(self):
-        """Test money regex patterns directly"""
-        extractor = TurkishEntityExtractor()
-        
-        test_cases = [
-            "15.000 TL",
-            "20.000,50 ₺",
-            "1000 lira",
-            "5.500,00 TL",
-        ]
-        
-        for test_text in test_cases:
-            result = extractor.extract(test_text)
-            assert len(result["MONEY"]) >= 1, f"Failed to extract money from: {test_text}"
-    
-    def test_extractor_date_patterns(self):
-        """Test date regex patterns directly"""
-        extractor = TurkishEntityExtractor()
-        
-        test_cases = [
-            "1 yıl",
-            "6 ay",
-            "3 hafta",
-            "10 gün",
-            "1 yıllığına",
-        ]
-        
-        for test_text in test_cases:
-            result = extractor.extract(test_text)
-            assert len(result["DATE"]) >= 1, f"Failed to extract date from: {test_text}"
-
+# --- Integration: realistic Turkish contract text ---
 
 class TestIntegration:
-    """Integration tests with realistic Turkish text"""
-    
-    def test_full_rental_contract_text(self):
-        """Test extraction from realistic rental contract text"""
+    def test_is_sozlesmesi(self):
         text = (
-            "Ahmet Yılmaz'a Antalya'daki evimi aylık 15.000 TL'ye "
-            "1 yıllığına kiralayacağım. 20.000 TL depozito alacağım."
+            "Bu iş sözleşmesi Ahmet Yılmaz ile ABC Teknoloji A.Ş. arasında "
+            "01.03.2025 tarihinde imzalanmıştır. Aylık brüt ücret 25.000 TL "
+            "olarak kararlaştırılmıştır. Deneme süresi 2 ay olarak belirlenmiştir. "
+            "Çalışma yeri İstanbul, Kadıköy ofisidir."
         )
-        response = client.post("/api/extract", json={"text": text})
+        response = client.post("/api/v1/extract", json={"text": text})
         assert response.status_code == 200
         data = response.json()
-        
-        # Should extract money
-        assert len(data["entities"]["MONEY"]) >= 2
-        
-        # Should extract date/duration
-        assert len(data["entities"]["DATE"]) >= 1
-        
-        # Should extract objects
-        assert len(data["entities"]["OBJECT_OR_PROPERTY"]) >= 1
+        entities = data["extracted_entities"]
+
+        assert data["contract_type"] == "is_sozlesmesi"
+        assert data["contract_type_confidence"] > 0
+        assert "Ahmet Yılmaz" in entities["PERSON"]
+        assert any("ABC" in org for org in entities["ORG"])
+        assert "25.000 TL" in entities["MONEY"]
+        assert "01.03.2025" in entities["DATE"]
+        assert "2 ay" in entities["CARDINAL"]
+        assert any("İstanbul" in loc for loc in entities["LOC"])
+
+    def test_kira_sozlesmesi(self):
+        text = (
+            "Kiracı Fatma Demir ile kiraya veren Ali Kaya arasında "
+            "kira sözleşmesi yapılmıştır. Aylık kira bedeli 15.000 TL, "
+            "depozito 30.000 TL. Kira süresi 1 yıllık. Artış oranı %25."
+        )
+        response = client.post("/api/v1/extract", json={"text": text})
+        assert response.status_code == 200
+        data = response.json()
+        entities = data["extracted_entities"]
+
+        assert data["contract_type"] == "kira_sozlesmesi"
+        assert len(entities["MONEY"]) >= 1
+        assert len(entities["CARDINAL"]) >= 1
+        assert len(entities["PERCENT"]) >= 1
+
+
+# --- Unit: contract_classifier ---
+
+class TestContractClassifier:
+    def test_is_sozlesmesi_detected(self):
+        text = "işçi işveren arasında brüt maaş ücret deneme süresi sgk"
+        ctype, confidence = classify_contract(text)
+        assert ctype == "is_sozlesmesi"
+        assert confidence > 0
+
+    def test_kira_sozlesmesi_detected(self):
+        text = "kiracı kiraya veren kira bedeli depozito tahliye"
+        ctype, confidence = classify_contract(text)
+        assert ctype == "kira_sozlesmesi"
+
+    def test_unknown_text_returns_none(self):
+        ctype, confidence = classify_contract("Bugün hava çok güzeldi.")
+        assert ctype is None
+        assert confidence == 0.0
+
+    def test_confidence_between_0_and_1(self):
+        _, conf = classify_contract("işçi işveren ücret maaş sgk kıdem tazminatı")
+        assert 0.0 <= conf <= 1.0
+
+
+# --- Unit: postprocessor ---
+
+class TestPostprocessor:
+    def test_date_extraction(self):
+        result = extract_all("Sözleşme 01.03.2025 tarihinde imzalandı.")
+        assert "01.03.2025" in result["DATE"]
+
+    def test_money_tl(self):
+        result = extract_all("Ücret 25.000 TL olarak belirlendi.")
+        assert "25.000 TL" in result["MONEY"]
+
+    def test_cardinal_duration(self):
+        result = extract_all("Deneme süresi 2 ay olarak belirlenmiştir.")
+        assert any("2 ay" in c for c in result["CARDINAL"])
+
+    def test_percent(self):
+        result = extract_all("Artış oranı %25 olarak uygulanır.")
+        assert any("25" in p for p in result["PERCENT"])
+
+    def test_empty_lists_when_nothing_found(self):
+        result = extract_all("Herhangi bir metin.")
+        assert result["DATE"] == []
+        assert result["MONEY"] == []
+        assert result["CARDINAL"] == []
+        assert result["PERCENT"] == []
+
+
+# --- Unit: spacy_mapper ---
+
+class TestSpacyMapper:
+    def test_all_keys_present(self):
+        result = to_spacy_format(
+            {"PER": [], "ORG": [], "LOC": []},
+            {"MONEY": [], "DATE": [], "CARDINAL": [], "PERCENT": []}
+        )
+        assert set(result.keys()) == ENTITY_KEYS
+
+    def test_bert_groups_mapped_correctly(self):
+        bert = {
+            "PER": [{"text": "Ahmet", "score": 0.99, "start": 0, "end": 5}],
+            "ORG": [{"text": "ABC A.Ş.", "score": 0.95, "start": 6, "end": 14}],
+            "LOC": [{"text": "İstanbul", "score": 0.98, "start": 15, "end": 23}],
+        }
+        regex = {"MONEY": ["25.000 TL"], "DATE": ["01.03.2025"], "CARDINAL": ["2 ay"], "PERCENT": []}
+        result = to_spacy_format(bert, regex)
+        assert result["PERSON"] == ["Ahmet"]
+        assert result["ORG"] == ["ABC A.Ş."]
+        assert result["LOC"] == ["İstanbul"]
+        assert result["MONEY"] == ["25.000 TL"]
+        assert result["DATE"] == ["01.03.2025"]
+        assert result["CARDINAL"] == ["2 ay"]
+        assert result["PERCENT"] == []
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
