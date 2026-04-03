@@ -48,14 +48,16 @@ docker run -p 8001:8001 nlp-server
 
 ### POST /api/v1/extract
 
-**Request:**
+Ana analiz endpoint'i.
+
+**İstek:**
 ```json
 {
   "text": "Bu iş sözleşmesi Ahmet Yılmaz ile ABC Teknoloji A.Ş. arasında 01.03.2025 tarihinde imzalanmıştır. Aylık brüt ücret 25.000 TL olarak kararlaştırılmıştır. Deneme süresi 2 ay olarak belirlenmiştir."
 }
 ```
 
-**Response:**
+**Yanıt:**
 ```json
 {
   "contract_type": "is_sozlesmesi",
