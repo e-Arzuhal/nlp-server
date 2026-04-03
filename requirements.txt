@@ -1,17 +1,6 @@
-# e-Arzuhal NLP Server - Requirements
-# This service performs Named Entity Recognition (NER) on Turkish text.
-
-# Web Framework
-fastapi>=0.109.0,<1.0.0
-uvicorn[standard]>=0.27.0,<1.0.0
-pydantic>=2.0.0,<3.0.0
-
-# NLP - SpaCy with Turkish Model
-# After installing dependencies, download the Turkish model:
-# python -m spacy download tr_core_news_md
-spacy>=3.7.0,<4.0.0
-
-# Testing (optional)
-pytest>=7.4.0
-pytest-asyncio>=0.23.0
-httpx>=0.26.0  # For TestClient
+fastapi
+uvicorn
+transformers
+torch
+pydantic
+python-dotenv

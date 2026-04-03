@@ -1,142 +1,134 @@
-# e-Arzuhal NLP Server
+# NLP Server
 
-A lightweight Named Entity Recognition (NER) microservice for Turkish text extraction.
+Turkish contract entity extraction microservice. Receives raw contract text, returns extracted entities in spaCy format + contract type — ready for GraphRAG server consumption.
 
-## Purpose
+## What It Does
 
-This service has **ONE JOB**: Extract named entities from Turkish text. It does NOT perform classification.
-
-## Features
-
-- **Named Entity Recognition**: SpaCy `tr_core_news_md` + custom Regex patterns
-- **Turkish Support**: Optimized for Turkish currency (TL, ₺, lira), dates, and property types
-- **Lightweight**: No heavy deep learning models - CPU-friendly
-- **Fast**: Single endpoint, minimal processing overhead
+- Classifies the contract type (iş, kira, satış, hizmet, etc.) using keyword matching
+- Extracts named entities (persons, orgs, locations) via BERT (`savasy/bert-base-turkish-ner-cased`)
+- Extracts structured values (money, dates, durations, percentages) via regex
+- Returns everything in a spaCy-compatible format that GraphRAG expects
 
 ## Extracted Entity Types
 
-| Type | Description | Examples |
-|------|-------------|----------|
-| `PERSON` | Person names | Ahmet Yılmaz, Fatma Demir |
-| `MONEY` | Monetary amounts | 15.000 TL, 20.000 ₺, 5000 lira |
-| `LOCATION` | Locations/places | Antalya, İstanbul, Ankara |
-| `DATE` | Date expressions | 1 yıllığına, 6 ay, 15 Ocak 2024 |
-| `OBJECT_OR_PROPERTY` | Objects/property types | ev, daire, araç, depozito |
+| Key | Source | Examples |
+|-----|--------|---------|
+| `PERSON` | BERT | Ahmet Yılmaz, Fatma Demir |
+| `ORG` | BERT | ABC Teknoloji A.Ş. |
+| `LOC` | BERT | İstanbul, Kadıköy |
+| `MONEY` | Regex | 25.000 TL, 500 USD, 1.200 EUR |
+| `DATE` | Regex | 01.03.2025, 15 Ocak 2024 |
+| `CARDINAL` | Regex | 2 ay, 1 yıllık, 30 gün |
+| `PERCENT` | Regex | %25, 10 yüzde |
 
 ## Installation
 
 ```bash
-# Create virtual environment
+# Create and activate environment
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# Install dependencies
 pip install -r requirements.txt
+```
 
-# Download SpaCy Turkish model
-python -m spacy download tr_core_news_md
+## Running
 
-# Run the server
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```bash
+uvicorn app.main:app --reload --port 8001
 ```
 
 ## Docker
 
 ```bash
-# Build
 docker build -t nlp-server .
-
-# Run
-docker run -p 8000:8000 nlp-server
+docker run -p 8001:8001 nlp-server
 ```
 
-## API Endpoints
+## API
 
-### POST /api/extract
-
-Main extraction endpoint - extracts named entities from Turkish text.
+### POST /api/v1/extract
 
 **Request:**
 ```json
 {
-  "text": "Ahmet Yılmaz'a Antalya'daki evimi aylık 15.000 TL'ye 1 yıllığına kiralayacağım. 20.000 TL depozito alacağım."
+  "text": "Bu iş sözleşmesi Ahmet Yılmaz ile ABC Teknoloji A.Ş. arasında 01.03.2025 tarihinde imzalanmıştır. Aylık brüt ücret 25.000 TL olarak kararlaştırılmıştır. Deneme süresi 2 ay olarak belirlenmiştir."
 }
 ```
 
 **Response:**
 ```json
 {
-  "raw_text": "Ahmet Yılmaz'a Antalya'daki evimi aylık 15.000 TL'ye 1 yıllığına kiralayacağım. 20.000 TL depozito alacağım.",
-  "entities": {
-    "PERSON": ["Ahmet Yılmaz"],
-    "MONEY": ["15.000 TL", "20.000 TL"],
-    "LOCATION": ["Antalya"],
-    "DATE": ["1 yıllığına"],
-    "OBJECT_OR_PROPERTY": ["ev", "depozito"]
-  }
+  "contract_type": "is_sozlesmesi",
+  "contract_type_confidence": 0.47,
+  "extracted_entities": {
+    "PERSON":   ["Ahmet Yılmaz"],
+    "ORG":      ["ABC Teknoloji A.Ş."],
+    "LOC":      [],
+    "MONEY":    ["25.000 TL"],
+    "DATE":     ["01.03.2025"],
+    "CARDINAL": ["2 ay"],
+    "PERCENT":  []
+  },
+  "raw_text_length": 194,
+  "processing_time_ms": 11
 }
 ```
+
+> `contract_type_confidence`, `raw_text_length`, `processing_time_ms` are consumed by the main server for logging/routing. They are **not** forwarded to GraphRAG.
 
 ### GET /health
 
-Health check endpoint.
-
 ```json
 {
-  "status": "healthy",
-  "version": "1.0.0",
-  "spacy_model_loaded": true
+  "status": "ok",
+  "model": "savasy/bert-base-turkish-ner-cased",
+  "model_loaded": true
 }
 ```
-
-### GET /docs
-
-Interactive API documentation (Swagger UI).
 
 ## Project Structure
 
 ```
 nlp-server/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py              # FastAPI application
-│   ├── models.py            # Pydantic schemas
+│   ├── main.py
+│   ├── routers/
+│   │   └── extract.py
 │   └── services/
-│       ├── __init__.py
-│       └── extractor.py     # TurkishEntityExtractor
-├── tests/
-│   └── test_nlp.py
-├── Dockerfile
+│       ├── contract_classifier.py   # keyword-based contract type detection
+│       ├── ner_service.py           # BERT NER singleton (PER, ORG, LOC)
+│       ├── postprocessor.py         # regex (MONEY, DATE, CARDINAL, PERCENT)
+│       └── spacy_mapper.py          # combines BERT + regex → spaCy format
+├── models/
+│   └── schemas.py
 ├── requirements.txt
-└── README.md
+└── Dockerfile
 ```
 
 ## Architecture
 
-This service is part of a **Star Topology** where a central "Main Server" orchestrates:
-
 ```
-                    ┌─────────────┐
-                    │ Main Server │
-                    │ (Orchestrator)│
-                    └──────┬──────┘
-                           │
-         ┌─────────────────┼─────────────────┐
-         │                 │                 │
-         ▼                 ▼                 ▼
-   ┌───────────┐    ┌───────────┐    ┌───────────┐
-   │ NLP Server│    │ Neo4j     │    │ LLM       │
-   │ (This)    │    │ Server    │    │ Server    │
-   └───────────┘    └───────────┘    └───────────┘
-         │
-         ▼
-   Extract entities
-   from Turkish text
+POST /api/v1/extract
+        │
+        ├── 1. Contract Type Classifier   (keyword-based)
+        │
+        ├── 2. BERT NER                   (PER, ORG, LOC)
+        │
+        ├── 3. Regex Post-Processor       (MONEY, DATE, CARDINAL, PERCENT)
+        │
+        └── 4. spaCy Format Mapper        (GraphRAG-compatible output)
 ```
 
-## Notes
+## Contract Types
 
-- If SpaCy model is not available, the service falls back to regex-only mode
-- All entity type keys are always present in the response (empty list if none found)
-- The service is stateless and can be scaled horizontally
+| Value | Description |
+|-------|-------------|
+| `is_sozlesmesi` | İş Sözleşmesi |
+| `kira_sozlesmesi` | Kira Sözleşmesi |
+| `satis_sozlesmesi` | Satış Sözleşmesi |
+| `hizmet_sozlesmesi` | Hizmet Sözleşmesi |
+| `vekaletname` | Vekaletname |
+| `taahhutname` | Taahhütname |
+| `kefalet_sozlesmesi` | Kefalet Sözleşmesi |
+
+If `contract_type_confidence < 0.6`, the main server should ask the user to confirm before proceeding.
