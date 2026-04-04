@@ -1,189 +1,136 @@
-# e-Arzuhal NLP Server
+# NLP Server
 
-Doğal dil işleme servisi — sözleşme tipi sınıflandırma ve varlık (entity) çıkarımı.
+Turkish contract entity extraction microservice. Receives raw contract text, returns extracted entities in spaCy format + contract type — ready for GraphRAG server consumption.
 
----
+## What It Does
 
-## Özellikler
+- Classifies the contract type (iş, kira, satış, hizmet, etc.) using keyword matching
+- Extracts named entities (persons, orgs, locations) via BERT (`savasy/bert-base-turkish-ner-cased`)
+- Extracts structured values (money, dates, durations, percentages) via regex
+- Returns everything in a spaCy-compatible format that GraphRAG expects
 
-- **Sözleşme Türü Sınıflandırma** — TF-IDF + Naive Bayes ile 7 Türkçe sözleşme türü
-- **Named Entity Recognition** — spaCy (opsiyonel) veya regex/lite mode
-- **Para Miktarı Çıkarımı** — TL/lira suffix'siz bağlamsal eşleşme (kira bedeli, ücret, tutar vb.)
-- **Süre / Tarih Ayrımı** — `sure` (12 ay, 6 hafta) ile `tarih` (01.01.2026) ayrı alanlarda
-- **DURATION Entity** — Ay/gün/hafta/yıl ifadeleri ayrı entity tipi olarak işaretlenir
+## Extracted Entity Types
 
----
+| Key | Source | Examples |
+|-----|--------|---------|
+| `PERSON` | BERT | Ahmet Yılmaz, Fatma Demir |
+| `ORG` | BERT | ABC Teknoloji A.Ş. |
+| `LOC` | BERT | İstanbul, Kadıköy |
+| `MONEY` | Regex | 25.000 TL, 500 USD, 1.200 EUR |
+| `DATE` | Regex | 01.03.2025, 15 Ocak 2024 |
+| `CARDINAL` | Regex | 2 ay, 1 yıllık, 30 gün |
+| `PERCENT` | Regex | %25, 10 yüzde |
 
-## Desteklenen Sözleşme Tipleri
-
-| Tip | Açıklama |
-|-----|----------|
-| `borc_sozlesmesi` | Borç / Kredi sözleşmesi |
-| `kira_sozlesmesi` | Kira sözleşmesi |
-| `hizmet_sozlesmesi` | Hizmet / Danışmanlık sözleşmesi |
-| `satis_sozlesmesi` | Satış sözleşmesi |
-| `is_sozlesmesi` | İş / İstihdam sözleşmesi |
-| `vekaletname` | Vekaletname |
-| `taahhutname` | Taahhütname |
-
----
-
-## Kurulum
+## Installation
 
 ```bash
-cd nlp-server
+# Create and activate environment
 python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # Linux/macOS
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
----
-
-## spaCy (Opsiyonel)
-
-Servis spaCy varsa spaCy NER, yoksa otomatik **regex/lite** moduna geçer.
+## Running
 
 ```bash
-# Önerilen (Python 3.11/3.12):
-python -m spacy download tr_core_news_sm
+uvicorn app.main:app --reload --port 8001
 ```
 
-| Değişken | Varsayılan | Açıklama |
-|----------|-----------|----------|
-| `USE_SPACY` | `true` | `false` → zorla regex/lite mod |
-| `REQUIRE_SPACY` | `false` | `true` → spaCy yoksa servis başlamaz |
-| `ALLOW_SPACY_DOWNLOAD` | `false` | `true` → runtime'da model indirir |
+## Docker
 
----
+```bash
+docker build -t nlp-server .
+docker run -p 8001:8001 nlp-server
+```
 
-## API Endpoints
+## API
 
-### POST /api/nlp/analyze
+### POST /api/v1/extract
 
 Ana analiz endpoint'i.
 
 **İstek:**
 ```json
 {
-  "text": "Kadıköy dairemi Ahmet Yılmaz'a 15000 kira bedeli ile 12 ay kiraya vereceğim."
+  "text": "Bu iş sözleşmesi Ahmet Yılmaz ile ABC Teknoloji A.Ş. arasında 01.03.2025 tarihinde imzalanmıştır. Aylık brüt ücret 25.000 TL olarak kararlaştırılmıştır. Deneme süresi 2 ay olarak belirlenmiştir."
 }
 ```
 
 **Yanıt:**
 ```json
 {
-  "success": true,
-  "contract_type": "kira_sozlesmesi",
-  "confidence": 0.92,
-  "entities": [
-    {"text": "Ahmet Yılmaz", "label": "PERSON", "mapped_field": "taraf"},
-    {"text": "15000 kira bedeli", "label": "MONEY", "mapped_field": "tutar"},
-    {"text": "12 ay", "label": "DURATION", "mapped_field": "sure"}
-  ],
-  "extracted_fields": {
-    "taraflar": ["Ahmet Yılmaz"],
-    "tutar": "15000 TL",
-    "tarih": null,
-    "sure": "12 ay",
-    "lokasyon": "Kadıköy",
-    "kurum": null
+  "contract_type": "is_sozlesmesi",
+  "contract_type_confidence": 0.47,
+  "extracted_entities": {
+    "PERSON":   ["Ahmet Yılmaz"],
+    "ORG":      ["ABC Teknoloji A.Ş."],
+    "LOC":      [],
+    "MONEY":    ["25.000 TL"],
+    "DATE":     ["01.03.2025"],
+    "CARDINAL": ["2 ay"],
+    "PERCENT":  []
   },
-  "suggestions": [
-    "Depozito miktarı belirtmek ister misiniz? (Kullanıcıların %84'ü ekliyor)"
-  ]
+  "raw_text_length": 194,
+  "processing_time_ms": 11
 }
 ```
 
-> **Not:** `tarih` yalnızca takvim tarihlerini içerir (ör. `01/06/2026`).
-> Süre ifadeleri (`12 ay`, `6 hafta`) `sure` alanına yazılır.
-
-### POST /api/nlp/classify
-
-Sadece sözleşme türü sınıflandırma.
-
-### POST /api/nlp/entities
-
-Sadece entity extraction.
+> `contract_type_confidence`, `raw_text_length`, `processing_time_ms` are consumed by the main server for logging/routing. They are **not** forwarded to GraphRAG.
 
 ### GET /health
 
-Sağlık kontrolü.
+```json
+{
+  "status": "ok",
+  "model": "savasy/bert-base-turkish-ner-cased",
+  "model_loaded": true
+}
+```
 
----
-
-## Entity Tipleri
-
-| Label | Açıklama | extracted_fields |
-|-------|----------|------------------|
-| `PERSON` | Kişi adı | `taraflar` |
-| `MONEY` | Para (TL suffix veya bağlamsal) | `tutar` |
-| `DATE` | Takvim tarihi (gg/aa/yyyy, ay isimleri) | `tarih` |
-| `DURATION` | Süre (ay, gün, hafta, yıl) | `sure` |
-| `ORG` | Kurum adı | `kurum` |
-| `GPE` | Yer adı | `lokasyon` |
-
----
-
-## Proje Yapısı
+## Project Structure
 
 ```
 nlp-server/
 ├── app/
 │   ├── main.py
-│   ├── config.py
-│   ├── models/schemas.py
-│   ├── routers/nlp.py
+│   ├── routers/
+│   │   └── extract.py
 │   └── services/
-│       ├── analyzer.py
-│       ├── contract_classifier.py
-│       └── entity_extractor.py    # Para + süre/tarih ayrımı; DURATION entity
-├── data/
-│   ├── train/
-│   └── models/
-├── tests/
+│       ├── contract_classifier.py   # keyword-based contract type detection
+│       ├── ner_service.py           # BERT NER singleton (PER, ORG, LOC)
+│       ├── postprocessor.py         # regex (MONEY, DATE, CARDINAL, PERCENT)
+│       └── spacy_mapper.py          # combines BERT + regex → spaCy format
+├── models/
+│   └── schemas.py
 ├── requirements.txt
-└── .env.example
+└── Dockerfile
 ```
 
----
+## Architecture
 
-## Ortam Değişkenleri
-
-| Değişken | Varsayılan | Açıklama |
-|----------|-----------|----------|
-| `HOST` | `0.0.0.0` | Dinleme adresi |
-| `PORT` | `8001` | Port |
-| `DEBUG` | `true` | Swagger UI + detaylı log |
-| `ALLOWED_ORIGINS` | `http://localhost:8080` | CORS whitelist |
-| `INTERNAL_API_KEY` | _(boş)_ | Prod'da set edilmeli |
-
----
-
-## Test Örnekleri
-
-### curl
-
-```bash
-curl -X POST "http://localhost:8001/api/nlp/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Kadikoy dairemi 15000 kira bedeli ile 12 ay kiraya verecegim"}'
+```
+POST /api/v1/extract
+        │
+        ├── 1. Contract Type Classifier   (keyword-based)
+        │
+        ├── 2. BERT NER                   (PER, ORG, LOC)
+        │
+        ├── 3. Regex Post-Processor       (MONEY, DATE, CARDINAL, PERCENT)
+        │
+        └── 4. spaCy Format Mapper        (GraphRAG-compatible output)
 ```
 
-### PowerShell
+## Contract Types
 
-```powershell
-Invoke-RestMethod -Method Post -Uri "http://localhost:8001/api/nlp/analyze" `
-  -ContentType "application/json" `
-  -Body (@{ text = "Ali Veli'ye 100.000 TL borc verecegim, 6 ay icinde odeyecek" } | ConvertTo-Json) `
-| ConvertTo-Json -Depth 6
-```
+| Value | Description |
+|-------|-------------|
+| `is_sozlesmesi` | İş Sözleşmesi |
+| `kira_sozlesmesi` | Kira Sözleşmesi |
+| `satis_sozlesmesi` | Satış Sözleşmesi |
+| `hizmet_sozlesmesi` | Hizmet Sözleşmesi |
+| `vekaletname` | Vekaletname |
+| `taahhutname` | Taahhütname |
+| `kefalet_sozlesmesi` | Kefalet Sözleşmesi |
 
----
-
-## Ekip
-
-- **Deniz Eren ARICI**
-- **Burak DERE** — AI & Data Engineer
+If `contract_type_confidence < 0.6`, the main server should ask the user to confirm before proceeding.
