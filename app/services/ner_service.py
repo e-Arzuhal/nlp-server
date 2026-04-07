@@ -7,25 +7,39 @@ from app.services import ollama_client
 ENTITY_KEYS = ["PERSON", "ORG", "LOC", "DATE", "MONEY", "CARDINAL", "PERCENT"]
 
 SYSTEM_PROMPT = """Sen bir Turkce sozlesme metni analiz uzmanisin.
-Verilen metinden asagidaki varlik turlerini cikar ve JSON olarak don:
+Verilen metinden varliklari cikarip JSON olarak doneceksin.
 
-- PERSON: Kisi isimleri (ornek: "Ahmet Yilmaz", "Fatma Demir")
-- ORG: Kurum/sirket isimleri (ornek: "ABC Teknoloji A.S.", "SGK")
-- LOC: Yer/konum isimleri (ornek: "Istanbul", "Kadikoy")
-- DATE: Tarihler (ornek: "01.03.2025", "1 Mart 2025")
-- MONEY: Para tutarlari birim ile birlikte (ornek: "25.000 TL", "1.500 USD")
-- CARDINAL: Sure/miktar ifadeleri (ornek: "2 ay", "1 yillik", "3 gun")
-- PERCENT: Yuzde ifadeleri (ornek: "%25", "yuzde 10")
+VARLIK TURLERI:
+- PERSON: Kisi isimleri. Metinde gectigi sekilde yaz.
+- ORG: Kurum, sirket, devlet kurumu isimleri.
+- LOC: Sehir, ilce, mahalle, adres gibi yer isimleri. Her yeri AYRI AYRI yaz, birlestirme.
+- DATE: Tarihler ve tekrar eden tarih ifadeleri. "her ayin 10u", "aylik", "yillik" gibi ifadeler DATE DEGILDIR.
+- MONEY: Para tutarlari, birim ile birlikte. Metinde nasil yazildiysa oyle yaz (ornek: "15000 tl", "25.000 TL").
+- CARDINAL: SADECE sure ifadeleri: "X yil", "X ay", "X gun", "X hafta" gibi. Baska sayilari ekleme.
+- PERCENT: Yuzde ifadeleri: "%25", "yuzde 10" gibi.
 
 KURALLAR:
-1. Sadece metinde gecen varliklari cikar, uydurma.
-2. Her anahtar icin bir liste don. Bulunamayan turler icin bos liste [] kullan.
-3. Yanit SADECE JSON olsun, baska bir sey yazma.
-4. Metin bozuk, yazim hatali veya OCR'den gelmis olabilir. En iyi tahminini yap.
-5. Varliklari metinde gectigi sekilde yaz, duzeltme yapma.
+1. SADECE metinde gecen varliklari cikar. Uydurma, tahmin etme.
+2. Varliklari metinde AYNEN gectigi sekilde yaz. Yazim duzeltme yapma. "ahmet yilmaza" yaziyorsa "ahmet yilmaz" olarak cikar ama harfleri degistirme (i'yi ı yapma, u'yu ü yapma).
+3. Bulunamayan turler icin bos liste [] kullan.
+4. Metin resmi olmayabilir, yazim hatali veya bozuk olabilir. Anlamaya calis.
+5. Ayni varlik birden fazla geciyorsa sadece bir kez yaz.
 
-Yanit formati:
-{"PERSON": [...], "ORG": [...], "LOC": [...], "DATE": [...], "MONEY": [...], "CARDINAL": [...], "PERCENT": [...]}"""
+ORNEK 1:
+Metin: "ben ali veli. mehmet oza evimi 15000 tl karsılıgı kiraya vericem. 12 aylık sozlesme olucak."
+Yanit: {"PERSON": ["ali veli", "mehmet oz"], "ORG": [], "LOC": [], "DATE": [], "MONEY": ["15000 tl"], "CARDINAL": ["12 aylık"], "PERCENT": []}
+
+ORNEK 2:
+Metin: "Kiracı Ayse Kaya ile kiraya veren Fatma Demir arasinda 01.06.2025 tarihinde ankara cankaya icin kira sozlesmesi yapildi. aylik 18.500 TL, depozito 37.000 TL. sure 2 yil. artis %20."
+Yanit: {"PERSON": ["Ayse Kaya", "Fatma Demir"], "ORG": [], "LOC": ["ankara", "cankaya"], "DATE": ["01.06.2025"], "MONEY": ["18.500 TL", "37.000 TL"], "CARDINAL": ["2 yil"], "PERCENT": ["%20"]}
+
+Yanit SADECE JSON olsun, baska bir sey yazma."""
+
+
+CARDINAL_PATTERN = re.compile(
+    r'^\d+\s*(?:yıl(?:lık)?|yil(?:lik)?|ay(?:lık|lik)?|hafta(?:lık|lik)?|gün(?:lük)?|gun(?:luk)?)$',
+    re.IGNORECASE,
+)
 
 
 def _empty_result() -> Dict[str, List[str]]:
@@ -48,7 +62,10 @@ def _parse_response(raw: str) -> Dict[str, List[str]]:
     for key in ENTITY_KEYS:
         val = data.get(key, [])
         if isinstance(val, list):
-            result[key] = [str(v) for v in val if v]
+            items = [str(v).strip() for v in val if v]
+            if key == "CARDINAL":
+                items = [v for v in items if CARDINAL_PATTERN.match(v)]
+            result[key] = items
     return result
 
 
