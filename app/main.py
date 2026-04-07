@@ -16,11 +16,11 @@ def root():
 
 
 @app.get("/health")
-def health():
+async def health():
     from app.services.ner_service import ner_service
-    model_loaded = ner_service.nlp is not None
+    model_ok = await ner_service.health_check()
     return {
-        "status": "ok" if model_loaded else "model_not_loaded",
-        "model": "savasy/bert-base-turkish-ner-cased",
-        "model_loaded": model_loaded
+        "status": "ok" if model_ok else "ollama_unavailable",
+        "model": ner_service.model_name,
+        "model_loaded": model_ok
     }

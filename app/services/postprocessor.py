@@ -11,23 +11,26 @@ DATE_PATTERNS = [
 
 # --- MONEY ---
 MONEY_PATTERNS = [
-    r'\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\s*(?:TL|₺|lira)',
-    r'\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\s*(?:USD|\$|dolar)',
-    r'\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\s*(?:EUR|€|euro)',
+    r'(?<!\d)\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\s*(?:TL|₺|lira)\b',
+    r'(?<!\d)\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\s*(?:USD|\$|dolar)\b',
+    r'(?<!\d)\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\s*(?:EUR|€|euro)\b',
+    r'(?<!\d)\d{4,}\s*(?:TL|₺|lira)\b',
+    r'(?<!\d)\d{4,}\s*(?:USD|\$|dolar)\b',
+    r'(?<!\d)\d{4,}\s*(?:EUR|€|euro)\b',
 ]
 
 # --- DURATION → CARDINAL ---
 DURATION_PATTERNS = [
-    r'\d+\s*yıl(?:lık)?',
-    r'\d+\s*ay(?:lık)?',
-    r'\d+\s*hafta(?:lık)?',
-    r'\d+\s*gün(?:lük)?',
+    r'(?<!\d)\d+\s*yıl(?:lık)?\b',
+    r'(?<!\d)\d+\s*ay(?:lık)?\b',
+    r'(?<!\d)\d+\s*hafta(?:lık)?\b',
+    r'(?<!\d)\d+\s*gün(?:lük)?\b',
 ]
 
 # --- PERCENT ---
 PERCENT_PATTERNS = [
-    r'%\s*\d+(?:[.,]\d+)?',
-    r'\d+(?:[.,]\d+)?\s*(?:yüzde|%)',
+    r'%\s*\d+(?:[.,]\d+)?\b',
+    r'(?<!\d)\d+(?:[.,]\d+)?\s*(?:yüzde|%)',
 ]
 
 
