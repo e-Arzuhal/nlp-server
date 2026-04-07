@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-transformers
-torch
+httpx
 pydantic
 python-dotenv
