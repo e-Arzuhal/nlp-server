@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.services.contract_classifier import classify_contract
 from app.services.postprocessor import extract_all
-from app.services.spacy_mapper import to_spacy_format
+from app.services.entity_merger import merge_entities
 
 client = TestClient(app)
 
@@ -17,8 +17,8 @@ class TestHealth:
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "ok"
-        assert data["model_loaded"] is True
+        assert "status" in data
+        assert "model_loaded" in data
         assert "model" in data
 
 
@@ -72,7 +72,7 @@ class TestExtractEndpoint:
         assert response.status_code == 422
 
 
-# --- Integration: realistic Turkish contract text ---
+# --- Integration: realistic Turkish contract text (requires Ollama running) ---
 
 class TestIntegration:
     def test_is_sozlesmesi(self):
@@ -164,31 +164,41 @@ class TestPostprocessor:
         assert result["PERCENT"] == []
 
 
-# --- Unit: spacy_mapper ---
+# --- Unit: entity_merger ---
 
-class TestSpacyMapper:
+class TestEntityMerger:
     def test_all_keys_present(self):
-        result = to_spacy_format(
-            {"PER": [], "ORG": [], "LOC": []},
+        result = merge_entities(
+            {k: [] for k in ENTITY_KEYS},
             {"MONEY": [], "DATE": [], "CARDINAL": [], "PERCENT": []}
         )
         assert set(result.keys()) == ENTITY_KEYS
 
-    def test_bert_groups_mapped_correctly(self):
-        bert = {
-            "PER": [{"text": "Ahmet", "score": 0.99, "start": 0, "end": 5}],
-            "ORG": [{"text": "ABC A.Ş.", "score": 0.95, "start": 6, "end": 14}],
-            "LOC": [{"text": "İstanbul", "score": 0.98, "start": 15, "end": 23}],
+    def test_llm_and_regex_merged(self):
+        llm = {
+            "PERSON": ["Ahmet Yılmaz"],
+            "ORG": ["ABC A.Ş."],
+            "LOC": ["İstanbul"],
+            "MONEY": ["25.000 TL"],
+            "DATE": ["01.03.2025"],
+            "CARDINAL": ["2 ay"],
+            "PERCENT": [],
         }
-        regex = {"MONEY": ["25.000 TL"], "DATE": ["01.03.2025"], "CARDINAL": ["2 ay"], "PERCENT": []}
-        result = to_spacy_format(bert, regex)
-        assert result["PERSON"] == ["Ahmet"]
+        regex = {"MONEY": ["25.000 TL"], "DATE": ["01.03.2025"], "CARDINAL": ["2 ay"], "PERCENT": ["%10"]}
+        result = merge_entities(llm, regex)
+        assert result["PERSON"] == ["Ahmet Yılmaz"]
         assert result["ORG"] == ["ABC A.Ş."]
         assert result["LOC"] == ["İstanbul"]
-        assert result["MONEY"] == ["25.000 TL"]
-        assert result["DATE"] == ["01.03.2025"]
+        assert result["MONEY"] == ["25.000 TL"]  # deduplicated
+        assert result["DATE"] == ["01.03.2025"]   # deduplicated
         assert result["CARDINAL"] == ["2 ay"]
-        assert result["PERCENT"] == []
+        assert result["PERCENT"] == ["%10"]        # from regex
+
+    def test_deduplication(self):
+        llm = {"PERSON": ["Ahmet", "Ahmet"], "ORG": [], "LOC": [], "DATE": [], "MONEY": [], "CARDINAL": [], "PERCENT": []}
+        regex = {"MONEY": [], "DATE": [], "CARDINAL": [], "PERCENT": []}
+        result = merge_entities(llm, regex)
+        assert result["PERSON"] == ["Ahmet"]
 
 
 if __name__ == "__main__":

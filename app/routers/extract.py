@@ -3,7 +3,7 @@ from models.schemas import ExtractRequest, ExtractResponse
 from app.services.contract_classifier import classify_contract
 from app.services.ner_service import ner_service
 from app.services.postprocessor import extract_all
-from app.services.spacy_mapper import to_spacy_format
+from app.services.entity_merger import merge_entities
 import time
 
 router = APIRouter(prefix="/api/v1")
@@ -17,14 +17,14 @@ async def extract_entities(request: ExtractRequest):
     # Step 1: Contract type
     contract_type, type_confidence = classify_contract(text)
 
-    # Step 2: BERT NER → PER, ORG, LOC
-    bert_results = ner_service.extract(text)
+    # Step 2: LLM NER → all 7 entity types
+    llm_results = await ner_service.extract(text)
 
-    # Step 3: Regex → MONEY, DATE, CARDINAL, PERCENT
+    # Step 3: Regex safety net → MONEY, DATE, CARDINAL, PERCENT
     regex_results = extract_all(text)
 
-    # Step 4: Map to spaCy format for GraphRAG compatibility
-    extracted_entities = to_spacy_format(bert_results, regex_results)
+    # Step 4: Merge LLM + regex results
+    extracted_entities = merge_entities(llm_results, regex_results)
 
     elapsed_ms = int((time.time() - start_time) * 1000)
 
