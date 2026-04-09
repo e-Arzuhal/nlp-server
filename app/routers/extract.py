@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from models.schemas import ExtractRequest, ExtractResponse
+from app.dependencies.auth import verify_internal_token
 from app.services.contract_classifier import classify_contract
 from app.services.ner_service import ner_service
 from app.services.postprocessor import extract_all
@@ -9,7 +10,7 @@ import time
 router = APIRouter(prefix="/api/v1")
 
 
-@router.post("/extract", response_model=ExtractResponse)
+@router.post("/extract", response_model=ExtractResponse, dependencies=[Depends(verify_internal_token)])
 async def extract_entities(request: ExtractRequest):
     start_time = time.time()
     text = request.text
