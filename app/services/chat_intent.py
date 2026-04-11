@@ -3,7 +3,7 @@ Chatbot Intent Classification + PII Masking Service
 Qwen 2 (Ollama) ile chatbot mesajlarının niyetini tespit eder ve kişisel bilgileri maskeler.
 """
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from app.services import ollama_client
 
@@ -38,15 +38,30 @@ Mesaj: "PDF nasil indirilir?"
 Yanit: GENERAL_HELP"""
 
 
-# ── PII Regex Patterns ──
+# ── PII Regex Patterns (module load zamanında bir kez derle) ──
 TC_PATTERN = re.compile(r'\b\d{11}\b')
 PHONE_PATTERN = re.compile(r'\b(?:0|\+90)?\s*(?:5\d{2})\s*\d{3}\s*\d{2}\s*\d{2}\b')
 EMAIL_PATTERN = re.compile(r'\b[\w.+-]+@[\w-]+\.[\w.]+\b')
+MONEY_PATTERN = re.compile(
+    r'\b\d{1,3}(?:[.,]\d{3})*(?:\s*(?:TL|tl|₺|lira|dolar|euro|EUR|USD))\b',
+    re.IGNORECASE,
+)
+# Büyük harfle başlayan ardışık 2+ kelime — basit isim tespiti
+NAME_PATTERN = re.compile(
+    r'\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zçğıöşü]+)+)\b'
+)
+
+# Hukuki terimler ve kurum isimleri — kişi ismi değil
+NAME_STOP_WORDS = frozenset({
+    "Türk Borçlar", "Borçlar Kanunu", "Türk Ceza", "Türk Medeni",
+    "Yargıtay Kararı", "Anayasa Mahkemesi",
+})
 
 
 async def classify_intent(message: str) -> Tuple[str, float]:
     """
     Qwen 2 ile mesajın niyetini sınıflandırır.
+    UYARI: Bu fonksiyona sanitize edilmiş mesaj gönderilmelidir — ham PII LLM'e sızmamalı.
     Returns: (intent, confidence)
     """
     try:
@@ -68,78 +83,94 @@ async def classify_intent(message: str) -> Tuple[str, float]:
         return "GENERAL_HELP", 0.0
 
 
+def _extract_basic_entities(text: str) -> Dict[str, List[str]]:
+    """
+    Basit regex tabanlı entity çıkarma (chatbot hızı için).
+    Tam NER yerine sadece PII maskeleme için yeterli.
+    """
+    potential_names = NAME_PATTERN.findall(text)
+    persons = [n for n in potential_names if n not in NAME_STOP_WORDS]
+
+    return {
+        "TC": TC_PATTERN.findall(text),
+        "MONEY": MONEY_PATTERN.findall(text),
+        "PERSON": persons,
+    }
+
+
 def sanitize_message(message: str, entities: Dict[str, List[str]]) -> str:
     """
     Mesajdaki kişisel bilgileri placeholder ile değiştirir.
     """
     sanitized = message
 
+    # Telefon — TC'den önce çalıştır, aksi halde 11 haneli telefon
+    # numarası (örn. 05551234567) TC pattern tarafından yutuluyor.
+    sanitized = PHONE_PATTERN.sub('[TELEFON]', sanitized)
+
     # TC Kimlik
     sanitized = TC_PATTERN.sub('[TC_KİMLİK]', sanitized)
-
-    # Telefon
-    sanitized = PHONE_PATTERN.sub('[TELEFON]', sanitized)
 
     # E-posta
     sanitized = EMAIL_PATTERN.sub('[E_POSTA]', sanitized)
 
-    # NER'den gelen PERSON entity'leri
+    # NER'den gelen PERSON entity'leri — kelime sınırı ile değiştir,
+    # "Ali" gibi kısa adın "Alişan" içinde substring eşleşmesini engelle.
     persons = entities.get("PERSON", [])
-    for i, person in enumerate(persons, 1):
-        if person and len(person) > 1:
-            sanitized = sanitized.replace(person, f'[KİŞİ_{i}]')
+    seen: set = set()
+    idx = 0
+    # Uzun isimleri önce değiştir ki "Ahmet Yılmaz" öncesi "Ahmet" yutulmasın
+    for person in sorted(persons, key=len, reverse=True):
+        if not person or len(person) <= 1 or person in seen:
+            continue
+        seen.add(person)
+        idx += 1
+        pattern = re.compile(r'\b' + re.escape(person) + r'\b')
+        sanitized = pattern.sub(f'[KİŞİ_{idx}]', sanitized)
 
     return sanitized
 
 
+def _mask_entities(entities: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """
+    `detected_entities` alanındaki ham PII'yi placeholder ile değiştirir.
+    Yanıt dışarı çıktığında ham kişisel veri ifşa olmamalı — schema
+    (Dict[str, List[str]]) korunur, sadece değerler maskelenir.
+    """
+    placeholder_map = {
+        "TC": "[TC_KİMLİK]",
+        "MONEY": "[TUTAR]",
+        "PERSON": "[KİŞİ]",
+        "PHONE": "[TELEFON]",
+        "EMAIL": "[E_POSTA]",
+    }
+    masked: Dict[str, List[str]] = {}
+    for key, values in entities.items():
+        if not values:
+            masked[key] = []
+            continue
+        tag = placeholder_map.get(key, f"[{key}]")
+        masked[key] = [f"{tag}_{i}" for i, _ in enumerate(values, 1)]
+    return masked
+
+
 async def process_chat_intent(message: str) -> dict:
     """
-    Ana fonksiyon: intent sınıflandırma + PII maskeleme.
+    Ana fonksiyon: önce PII maskeleme, sonra sanitize edilmiş mesaj ile intent sınıflandırma.
+    Ham PII asla Ollama'ya gönderilmez ve yanıtta ifşa edilmez.
     """
-    # 1. Basit NER — PERSON çıkarma (hızlı, Ollama'ya gerek yok)
+    # 1. Basit NER — PII tespit
     entities = _extract_basic_entities(message)
 
-    # 2. Intent sınıflandırma (Qwen 2 ile)
-    intent, confidence = await classify_intent(message)
-
-    # 3. PII maskeleme
+    # 2. PII maskeleme — LLM'e gönderilmeden önce
     sanitized = sanitize_message(message, entities)
+
+    # 3. Intent sınıflandırma — sanitize edilmiş mesaj ile (ham PII LLM'e sızmasın)
+    intent, confidence = await classify_intent(sanitized)
 
     return {
         "intent": intent,
         "confidence": confidence,
         "sanitized_message": sanitized,
-        "detected_entities": entities,
+        "detected_entities": _mask_entities(entities),
     }
-
-
-def _extract_basic_entities(text: str) -> Dict[str, List[str]]:
-    """
-    Basit regex tabanlı entity çıkarma (chatbot hızı için).
-    Tam NER yerine sadece PII maskeleme için yeterli.
-    """
-    entities: Dict[str, List[str]] = {"PERSON": [], "MONEY": [], "TC": []}
-
-    # TC Kimlik
-    entities["TC"] = TC_PATTERN.findall(text)
-
-    # Para tutarları
-    money_pattern = re.compile(
-        r'\b\d{1,3}(?:[.,]\d{3})*(?:\s*(?:TL|tl|₺|lira|dolar|euro|EUR|USD))\b',
-        re.IGNORECASE
-    )
-    entities["MONEY"] = money_pattern.findall(text)
-
-    # Basit isim tespiti — büyük harfle başlayan ardışık kelimeler
-    # (Tam NER değil ama PII maskeleme için yeterli)
-    name_pattern = re.compile(r'\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zçğıöşü]+)+)\b')
-    potential_names = name_pattern.findall(text)
-
-    # Türkçe genel kelimeler filtrele
-    stop_words = {
-        "Türk Borçlar", "Borçlar Kanunu", "Türk Ceza", "Türk Medeni",
-        "Yargıtay Kararı", "Anayasa Mahkemesi",
-    }
-    entities["PERSON"] = [n for n in potential_names if n not in stop_words]
-
-    return entities
