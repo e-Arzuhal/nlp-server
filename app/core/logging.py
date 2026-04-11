@@ -11,6 +11,17 @@ import logging
 import re
 from typing import Any
 
+# Fields that are part of the standard LogRecord and should not be treated as
+# "extra" payload.  Defined once at module level so both _JsonFormatter and
+# PIIRedactFilter share the same set without repeating it.
+_BUILTIN_ATTRS: frozenset[str] = frozenset({
+    "name", "msg", "args", "levelname", "levelno", "pathname",
+    "filename", "module", "exc_info", "exc_text", "stack_info",
+    "lineno", "funcName", "created", "msecs", "relativeCreated",
+    "thread", "threadName", "processName", "process", "message",
+    "taskName",
+})
+
 
 # ── JSON formatter ─────────────────────────────────────────────────────────────
 
@@ -45,13 +56,6 @@ class _JsonFormatter(logging.Formatter):
                 payload["exc"] = f"{exc_type.__name__}: {exc_value}"
 
         # Merge any extra fields (method, path, status, ms, etc.)
-        _BUILTIN_ATTRS = frozenset({
-            "name", "msg", "args", "levelname", "levelno", "pathname",
-            "filename", "module", "exc_info", "exc_text", "stack_info",
-            "lineno", "funcName", "created", "msecs", "relativeCreated",
-            "thread", "threadName", "processName", "process", "message",
-            "taskName",
-        })
         for key, value in record.__dict__.items():
             if key not in _BUILTIN_ATTRS and not key.startswith("_"):
                 payload[key] = value
@@ -134,13 +138,6 @@ class PIIRedactFilter(logging.Filter):
                     for a in record.args
                 )
         # Redact string values in extra fields (set via logger.xxx(..., extra={...}))
-        _BUILTIN_ATTRS = frozenset({
-            "name", "msg", "args", "levelname", "levelno", "pathname",
-            "filename", "module", "exc_info", "exc_text", "stack_info",
-            "lineno", "funcName", "created", "msecs", "relativeCreated",
-            "thread", "threadName", "processName", "process", "message",
-            "taskName",
-        })
         for key, value in list(record.__dict__.items()):
             if key not in _BUILTIN_ATTRS and not key.startswith("_") and isinstance(value, str):
                 setattr(record, key, self._redact(value))

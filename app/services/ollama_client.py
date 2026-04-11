@@ -37,7 +37,7 @@ async def generate(prompt: str, system: str, format_json: bool = True) -> str:
         logger.error("ollama_generate_failed", extra={
             "model": OLLAMA_MODEL,
             "ms": int((time.time() - start) * 1000),
-        })
+        }, exc_info=True)
         raise
 
 
@@ -51,5 +51,5 @@ async def health_check() -> bool:
             logger.debug("ollama_health_check", extra={"available": available})
             return available
     except Exception:
-        logger.error("ollama_health_check_failed")
+        logger.error("ollama_health_check_failed", exc_info=True)
         return False

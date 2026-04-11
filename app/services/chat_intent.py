@@ -84,7 +84,7 @@ async def classify_intent(message: str) -> Tuple[str, float]:
         logger.info("intent_classified", extra={"intent": "GENERAL_HELP", "confidence": 0.5})
         return "GENERAL_HELP", 0.5
     except Exception:
-        logger.error("intent_classification_failed")
+        logger.error("intent_classification_failed", exc_info=True)
         return "GENERAL_HELP", 0.0
 
 

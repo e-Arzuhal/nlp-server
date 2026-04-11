@@ -92,7 +92,7 @@ class NERService:
             })
             return result
         except Exception:
-            logger.error("ner_extraction_failed")
+            logger.error("ner_extraction_failed", exc_info=True)
             return _empty_result()
 
     async def health_check(self) -> bool:
