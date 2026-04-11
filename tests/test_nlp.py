@@ -1,9 +1,11 @@
+import os
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 from app.services.contract_classifier import classify_contract
 from app.services.postprocessor import extract_all
 from app.services.entity_merger import merge_entities
+from app.services.chat_intent import sanitize_message, _extract_basic_entities, _mask_entities
 
 client = TestClient(app)
 
@@ -199,6 +201,110 @@ class TestEntityMerger:
         regex = {"MONEY": [], "DATE": [], "CARDINAL": [], "PERCENT": []}
         result = merge_entities(llm, regex)
         assert result["PERSON"] == ["Ahmet"]
+
+
+AUTH_HEADER = {"X-Internal-API-Key": os.getenv("INTERNAL_API_KEY", "")}
+
+
+# --- POST /api/v1/chat-intent ---
+
+class TestChatIntentEndpoint:
+    def test_response_structure(self):
+        response = client.post(
+            "/api/v1/chat-intent",
+            json={"message": "Bu sözleşmede cezai şart var mı?"},
+            headers=AUTH_HEADER,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "intent" in data
+        assert "confidence" in data
+        assert "sanitized_message" in data
+        assert "detected_entities" in data
+
+    def test_confidence_between_0_and_1(self):
+        response = client.post(
+            "/api/v1/chat-intent",
+            json={"message": "Eksik maddeler neler?"},
+            headers=AUTH_HEADER,
+        )
+        assert response.status_code == 200
+        assert 0.0 <= response.json()["confidence"] <= 1.0
+
+    def test_empty_message_fails(self):
+        response = client.post(
+            "/api/v1/chat-intent",
+            json={"message": ""},
+            headers=AUTH_HEADER,
+        )
+        assert response.status_code == 422
+
+    def test_missing_message_field_fails(self):
+        response = client.post(
+            "/api/v1/chat-intent",
+            json={},
+            headers=AUTH_HEADER,
+        )
+        assert response.status_code == 422
+
+    def test_no_auth_header_returns_401(self):
+        response = client.post(
+            "/api/v1/chat-intent",
+            json={"message": "Test mesajı"},
+        )
+        assert response.status_code == 401
+
+    def test_wrong_auth_header_returns_401(self):
+        response = client.post(
+            "/api/v1/chat-intent",
+            json={"message": "Test mesajı"},
+            headers={"X-Internal-API-Key": "wrong-key"},
+        )
+        assert response.status_code == 401
+
+
+# --- Unit: PII sanitization ---
+
+class TestPIISanitization:
+    def test_tc_masked(self):
+        entities = _extract_basic_entities("TC kimlik 12345678901 numaralı kişi")
+        assert "12345678901" in entities["TC"]
+
+    def test_phone_masked(self):
+        msg = "Beni 05551234567 numaradan arayın"
+        sanitized = sanitize_message(msg, _extract_basic_entities(msg))
+        assert "05551234567" not in sanitized
+        assert "[TELEFON]" in sanitized
+
+    def test_email_masked(self):
+        msg = "Mail adresim ahmet@example.com olarak kayıtlı"
+        sanitized = sanitize_message(msg, _extract_basic_entities(msg))
+        assert "ahmet@example.com" not in sanitized
+        assert "[E_POSTA]" in sanitized
+
+    def test_person_name_masked(self):
+        msg = "Kiracı Ahmet Yılmaz ile görüştük"
+        entities = _extract_basic_entities(msg)
+        sanitized = sanitize_message(msg, entities)
+        assert "Ahmet Yılmaz" not in sanitized
+        assert "[KİŞİ_1]" in sanitized
+
+    def test_legal_terms_not_masked_as_person(self):
+        entities = _extract_basic_entities("Türk Borçlar Kanunu madde 299")
+        assert "Türk Borçlar" not in entities["PERSON"]
+
+    def test_mask_entities_replaces_values(self):
+        entities = {"TC": ["12345678901"], "MONEY": ["25.000 TL"], "PERSON": ["Ahmet Yılmaz"]}
+        masked = _mask_entities(entities)
+        assert masked["TC"] == ["[TC_KİMLİK]_1"]
+        assert masked["MONEY"] == ["[TUTAR]_1"]
+        assert masked["PERSON"] == ["[KİŞİ]_1"]
+
+    def test_mask_entities_empty_lists_preserved(self):
+        entities = {"TC": [], "MONEY": [], "PERSON": []}
+        masked = _mask_entities(entities)
+        for key in entities:
+            assert masked[key] == []
 
 
 if __name__ == "__main__":
