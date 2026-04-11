@@ -3,6 +3,7 @@ load_dotenv()
 
 from fastapi import FastAPI
 from app.routers.extract import router
+from app.routers.chat_intent import router as chat_intent_router
 
 app = FastAPI(
     title="NLP Server",
@@ -11,6 +12,7 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.include_router(chat_intent_router)
 
 
 @app.get("/")
