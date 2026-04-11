@@ -1,5 +1,8 @@
+import logging
 import re
 from typing import Dict, List
+
+logger = logging.getLogger(__name__)
 
 ENTITY_KEYS = ["PERSON", "ORG", "LOC", "DATE", "MONEY", "CARDINAL", "PERCENT"]
 
@@ -45,5 +48,12 @@ def merge_entities(
                 continue
             combined.append(normalized)
 
+        regex_added = len(combined) - len([v for v in llm_vals if v.strip()])
+        logger.debug("entity_merge_complete", extra={
+            "entity_type": key,
+            "llm_count": len(llm_vals),
+            "regex_added": max(0, regex_added),
+            "total": len(combined),
+        })
         merged[key] = combined
     return merged
