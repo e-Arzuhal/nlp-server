@@ -15,3 +15,16 @@ class ExtractResponse(BaseModel):
     contract_type_confidence: float
     raw_text_length: int
     processing_time_ms: int
+
+
+# ── Chat Intent ──
+
+class ChatIntentRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+
+
+class ChatIntentResponse(BaseModel):
+    intent: str
+    confidence: float
+    sanitized_message: str
+    detected_entities: Dict[str, List[str]]
