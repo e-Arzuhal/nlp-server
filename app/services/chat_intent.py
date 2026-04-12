@@ -2,10 +2,13 @@
 Chatbot Intent Classification + PII Masking Service
 Qwen 2 (Ollama) ile chatbot mesajlarının niyetini tespit eder ve kişisel bilgileri maskeler.
 """
+import logging
 import re
 from typing import Dict, List, Tuple
 
 from app.services import ollama_client
+
+logger = logging.getLogger(__name__)
 
 INTENTS = [
     "CONTRACT_CLAUSE_QUESTION",
@@ -75,11 +78,13 @@ async def classify_intent(message: str) -> Tuple[str, float]:
         # Bilinen intent'lerden birine eşle
         for intent in INTENTS:
             if intent in result:
+                logger.info("intent_classified", extra={"intent": intent, "confidence": 0.9})
                 return intent, 0.9
 
+        logger.info("intent_classified", extra={"intent": "GENERAL_HELP", "confidence": 0.5})
         return "GENERAL_HELP", 0.5
-    except Exception as e:
-        print(f"Intent classification failed: {e}")
+    except Exception:
+        logger.error("intent_classification_failed", exc_info=True)
         return "GENERAL_HELP", 0.0
 
 
@@ -90,12 +95,17 @@ def _extract_basic_entities(text: str) -> Dict[str, List[str]]:
     """
     potential_names = NAME_PATTERN.findall(text)
     persons = [n for n in potential_names if n not in NAME_STOP_WORDS]
-
-    return {
+    result = {
         "TC": TC_PATTERN.findall(text),
         "MONEY": MONEY_PATTERN.findall(text),
         "PERSON": persons,
     }
+    logger.debug("pii_entities_detected", extra={
+        "tc_count": len(result["TC"]),
+        "money_count": len(result["MONEY"]),
+        "person_count": len(result["PERSON"]),
+    })
+    return result
 
 
 def sanitize_message(message: str, entities: Dict[str, List[str]]) -> str:
@@ -159,6 +169,8 @@ async def process_chat_intent(message: str) -> dict:
     Ana fonksiyon: önce PII maskeleme, sonra sanitize edilmiş mesaj ile intent sınıflandırma.
     Ham PII asla Ollama'ya gönderilmez ve yanıtta ifşa edilmez.
     """
+    logger.debug("chat_intent_start", extra={"message_length": len(message)})
+
     # 1. Basit NER — PII tespit
     entities = _extract_basic_entities(message)
 

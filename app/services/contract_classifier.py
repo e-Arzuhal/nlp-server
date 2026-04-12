@@ -1,4 +1,7 @@
+import logging
 from typing import Tuple, Optional
+
+logger = logging.getLogger(__name__)
 
 CONTRACT_KEYWORDS = {
     "is_sozlesmesi": [
@@ -51,7 +54,12 @@ def classify_contract(text: str) -> Tuple[Optional[str], float]:
     best_score = scores[best_type]
 
     if best_score < 0.05:
+        logger.debug("contract_classification_below_threshold", extra={"best_score": round(best_score, 4)})
         return None, 0.0
 
     confidence = min(1.0, best_score * 3.5)
+    logger.info("contract_classified", extra={
+        "contract_type": best_type,
+        "confidence": round(confidence, 3),
+    })
     return best_type, round(confidence, 2)
