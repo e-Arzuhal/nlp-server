@@ -1,10 +1,21 @@
 import os
+import logging
+import time
 from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+
+
+from app.core.logging import setup_logging
+
+setup_logging(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
+logger.info("NLP server starting", extra={"log_level": os.getenv("LOG_LEVEL", "INFO")})
+
 from app.routers.extract import router
 from app.routers.chat_intent import router as chat_intent_router
 
@@ -43,6 +54,22 @@ async def api_key_middleware(request: Request, call_next):
     if _internal_api_key and request.headers.get("X-Internal-API-Key") != _internal_api_key:
         return JSONResponse(status_code=401, content={"detail": "Geçersiz veya eksik API anahtarı"})
     return await call_next(request)
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # Skip health/root probes to avoid log noise from periodic polling.
+    if request.url.path in ("/health", "/"):
+        return await call_next(request)
+    start = time.time()
+    response = await call_next(request)
+    logger.info("http_request", extra={
+        "method": request.method,
+        "path": request.url.path,
+        "status": response.status_code,
+        "ms": int((time.time() - start) * 1000),
+    })
+    return response
+
 
 app.include_router(router)
 app.include_router(chat_intent_router)
