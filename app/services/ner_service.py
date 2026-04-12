@@ -1,8 +1,11 @@
 import json
+import logging
 import re
 from typing import Dict, List
 
 from app.services import ollama_client
+
+logger = logging.getLogger(__name__)
 
 ENTITY_KEYS = ["PERSON", "ORG", "LOC", "DATE", "MONEY", "CARDINAL", "PERCENT"]
 
@@ -50,6 +53,7 @@ def _parse_response(raw: str) -> Dict[str, List[str]]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
+        logger.debug("ner_response_fallback_json_parse")
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         if not match:
             return _empty_result()
@@ -74,15 +78,21 @@ class NERService:
         self.model_name = ollama_client.OLLAMA_MODEL
 
     async def extract(self, text: str) -> Dict[str, List[str]]:
+        logger.debug("ner_extract_start", extra={"text_length": len(text)})
         try:
             raw = await ollama_client.generate(
                 prompt=text,
                 system=SYSTEM_PROMPT,
                 format_json=True,
             )
-            return _parse_response(raw)
-        except Exception as e:
-            print(f"Ollama NER extraction failed: {e}")
+            result = _parse_response(raw)
+            logger.info("ner_extract_complete", extra={
+                "entity_types": list(result.keys()),
+                "total_entities": sum(len(v) for v in result.values()),
+            })
+            return result
+        except Exception:
+            logger.error("ner_extraction_failed", exc_info=True)
             return _empty_result()
 
     async def health_check(self) -> bool:
