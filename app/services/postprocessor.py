@@ -1,5 +1,8 @@
+import logging
 import re
 from typing import List, Dict
+
+logger = logging.getLogger(__name__)
 
 # --- DATE ---
 DATE_PATTERNS = [
@@ -43,9 +46,19 @@ def _find_all(patterns: List[str], text: str) -> List[str]:
 
 
 def extract_all(text: str) -> Dict[str, List[str]]:
+    dates = _find_all(DATE_PATTERNS, text)
+    money = _find_all(MONEY_PATTERNS, text)
+    cardinal = _find_all(DURATION_PATTERNS, text)
+    percent = _find_all(PERCENT_PATTERNS, text)
+    logger.debug("postprocessor_complete", extra={
+        "DATE": len(dates),
+        "MONEY": len(money),
+        "CARDINAL": len(cardinal),
+        "PERCENT": len(percent),
+    })
     return {
-        "DATE":     _find_all(DATE_PATTERNS, text),
-        "MONEY":    _find_all(MONEY_PATTERNS, text),
-        "CARDINAL": _find_all(DURATION_PATTERNS, text),
-        "PERCENT":  _find_all(PERCENT_PATTERNS, text),
+        "DATE":     dates,
+        "MONEY":    money,
+        "CARDINAL": cardinal,
+        "PERCENT":  percent,
     }
