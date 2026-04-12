@@ -3,7 +3,7 @@ from typing import Optional, List, Dict
 
 
 class ExtractRequest(BaseModel):
-    text: str = Field(..., min_length=1)
+    text: str = Field(..., min_length=1, max_length=10000)
 
 
 class ExtractResponse(BaseModel):
@@ -20,7 +20,7 @@ class ExtractResponse(BaseModel):
 # ── Chat Intent ──
 
 class ChatIntentRequest(BaseModel):
-    message: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=2000)
 
 
 class ChatIntentResponse(BaseModel):
