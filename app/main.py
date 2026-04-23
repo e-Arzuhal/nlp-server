@@ -10,6 +10,8 @@ from fastapi.responses import JSONResponse
 
 
 
+import uuid
+
 from app.core.logging import setup_logging
 
 setup_logging(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -57,17 +59,20 @@ async def api_key_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    # Skip health/root probes to avoid log noise from periodic polling.
     if request.url.path in ("/health", "/"):
         return await call_next(request)
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     start = time.time()
     response = await call_next(request)
     logger.info("http_request", extra={
+        "service": "nlp",
         "method": request.method,
         "path": request.url.path,
         "status": response.status_code,
         "ms": int((time.time() - start) * 1000),
+        "request_id": request_id,
     })
+    response.headers["X-Request-ID"] = request_id
     return response
 
 
