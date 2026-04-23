@@ -21,7 +21,7 @@ logger.info("NLP server starting", extra={"log_level": os.getenv("LOG_LEVEL", "I
 from app.routers.extract import router
 from app.routers.chat_intent import router as chat_intent_router
 
-_debug = os.getenv("DEBUG", "true").lower() == "true"
+_debug = os.getenv("DEBUG", "false").lower() == "true"
 _internal_api_key = os.getenv("INTERNAL_API_KEY", "")
 _allowed_origins = [
     o.strip() for o in os.getenv(
@@ -50,10 +50,14 @@ app.add_middleware(
 
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
-    """Internal API key kontrolü. INTERNAL_API_KEY set edilmemişse (dev) pas geçer."""
+    """Internal API key kontrolü. Debug dışı ortamlarda zorunludur."""
     if request.url.path in ("/health", "/"):
         return await call_next(request)
-    if _internal_api_key and request.headers.get("X-Internal-API-Key") != _internal_api_key:
+    if not _internal_api_key:
+        if _debug:
+            return await call_next(request)
+        return JSONResponse(status_code=503, content={"detail": "Server misconfigured: INTERNAL_API_KEY is required"})
+    if request.headers.get("X-Internal-API-Key") != _internal_api_key:
         return JSONResponse(status_code=401, content={"detail": "Geçersiz veya eksik API anahtarı"})
     return await call_next(request)
 
