@@ -8,6 +8,7 @@ from app.services.contract_classifier import classify_contract
 from app.services.ner_service import ner_service
 from app.services.postprocessor import extract_all
 from app.services.entity_merger import merge_entities
+from app.services.classifier_eval import get_cached_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -53,3 +54,9 @@ async def extract_entities(request: ExtractRequest):
         raw_text_length=len(text),
         processing_time_ms=elapsed_ms
     )
+
+
+@router.get("/metrics")
+def get_metrics():
+    """Classifier precision / recall / F1 on curated Turkish legal test set."""
+    return get_cached_metrics()
