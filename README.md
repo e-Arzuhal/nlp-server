@@ -95,7 +95,7 @@ Sınıflandırıcının precision / recall / F1 metriklerini döner. 28 etiketli
     "...": "..."
   },
   "classifier": "keyword_overlap",
-  "note": "Evaluated on 28-sample curated Turkish legal text test set (7 classes)."
+  "note": "Evaluated on 49-sample Turkish legal text test set (7 classes × keyword-rich + keyword-free + hard-negative tiers)."
 }
 ```
 
@@ -134,13 +134,15 @@ nlp-server/
 ```
 POST /api/v1/extract
         │
-        ├── 1. Contract Type Classifier   (keyword-based + confidence score)
+        ├── 1a. Contract Type Classifier  (keyword overlap + confidence score)
         │
-        ├── 2. Qwen 2.5 NER via Ollama   (PER, ORG, LOC) — local, no external API
+        ├── 1b. Qwen 2.5 Classification  (confidence < 0.4 ise devreye girer — transformer-based)
         │
-        ├── 3. Regex Post-Processor       (MONEY, DATE, CARDINAL, PERCENT)
+        ├── 2.  Qwen 2.5 NER via Ollama  (PER, ORG, LOC) — local, no external API
         │
-        └── 4. Entity Merger              (LLM + regex → GraphRAG-compatible output)
+        ├── 3.  Regex Post-Processor      (MONEY, DATE, CARDINAL, PERCENT)
+        │
+        └── 4.  Entity Merger             (LLM + regex → GraphRAG-compatible output)
 
 GET /api/v1/metrics
         └── classifier_eval.py → precision/recall/F1 per class (cached)
