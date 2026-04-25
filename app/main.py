@@ -1,6 +1,7 @@
 import os
 import logging
 import time
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -16,7 +17,6 @@ from app.core.logging import setup_logging
 
 setup_logging(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
-logger.info("NLP server starting", extra={"log_level": os.getenv("LOG_LEVEL", "INFO")})
 
 from app.routers.extract import router
 from app.routers.chat_intent import router as chat_intent_router
@@ -30,10 +30,28 @@ _allowed_origins = [
     ).split(",")
 ]
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown lifecycle — FastAPI best practice (replaces deprecated on_event)."""
+    logger.info("NLP server starting", extra={"log_level": os.getenv("LOG_LEVEL", "INFO")})
+    # Startup: Ollama bağlantısını kontrol et
+    try:
+        from app.services.ner_service import ner_service
+        model_ok = await ner_service.health_check()
+        logger.info("Ollama model status: %s (model=%s)", "ready" if model_ok else "unavailable", ner_service.model_name)
+    except Exception as e:
+        logger.warning("Ollama health check failed at startup: %s", e)
+    yield
+    # Shutdown
+    logger.info("NLP server shutting down")
+
+
 app = FastAPI(
     title="NLP Server",
     description="Turkish contract entity extraction",
     version="1.0.0",
+    lifespan=lifespan,
     docs_url="/docs" if _debug else None,
     redoc_url="/redoc" if _debug else None,
 )
