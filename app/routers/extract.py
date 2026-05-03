@@ -18,6 +18,7 @@ router = APIRouter(prefix="/api/v1")
 _VALID_CONTRACT_TYPES = {
     "is_sozlesmesi", "kira_sozlesmesi", "satis_sozlesmesi",
     "hizmet_sozlesmesi", "vekaletname", "taahhutname", "kefalet_sozlesmesi",
+    "borc_sozlesmesi", "gizlilik_sozlesmesi",
 }
 
 _QWEN_CLASSIFY_SYSTEM = """Sen bir Türkçe hukuki belge sınıflandırma uzmanısın.
@@ -31,6 +32,8 @@ Desteklenen türler:
 - vekaletname
 - taahhutname
 - kefalet_sozlesmesi
+- borc_sozlesmesi
+- gizlilik_sozlesmesi
 
 Yanıt olarak SADECE sözleşme türünün adını yaz (örn: kira_sozlesmesi).
 Emin değilsen UNKNOWN yaz. Başka hiçbir şey yazma."""
